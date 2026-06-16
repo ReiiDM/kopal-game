@@ -114,6 +114,10 @@ function App() {
   const [showWinnerModal, setShowWinnerModal] = useState(false) // To control when winner modal appears
   const [roomPlayers, setRoomPlayers] = useState([]) // For tracking players in room with team info
   const [selectedTarget, setSelectedTarget] = useState(null) // For selecting target in 2v2
+  const [isShaking, setIsShaking] = useState(false)
+  const [ultimateSplash, setUltimateSplash] = useState(null)
+  const [turnBanner, setTurnBanner] = useState(null)
+  const [flashWhite, setFlashWhite] = useState(false)
   // Load win/loss from localStorage
   const [wins, setWins] = useState(() => {
     const saved = localStorage.getItem('kopal-wins')
@@ -476,6 +480,35 @@ function App() {
       const match = payload?.match || null
       const lines = []
       const logEntries = Array.isArray(payload?.log) ? payload.log : []
+
+      // Look for ultimate action (slot 4)
+      const ultimateAction = logEntries.find(entry => entry.kind === 'skill' && entry.slot === 4)
+      if (ultimateAction) {
+        const actor = match?.players?.find(p => p.playerIndex === ultimateAction.actorPlayerIndex)
+        if (actor) {
+          setUltimateSplash({
+            heroId: actor.heroId,
+            heroName: actor.heroName || 'Hero',
+            skillName: ultimateAction.name || 'Ultimate'
+          })
+          setFlashWhite(true)
+          setTimeout(() => setFlashWhite(false), 600)
+          
+          setIsShaking(true)
+          setTimeout(() => setIsShaking(false), 500)
+          
+          setTimeout(() => {
+            setUltimateSplash(null)
+          }, 1800)
+        }
+      } else {
+        const hasCrit = logEntries.some(entry => entry.crit)
+        if (hasCrit) {
+          setIsShaking(true)
+          setTimeout(() => setIsShaking(false), 500)
+        }
+      }
+
       for (const entry of logEntries) {
         const line = formatActionLine(match, entry)
         if (line) lines.push(line)
@@ -866,6 +899,20 @@ function App() {
       setShowWinnerModal(false)
     }
   }, [isMatchOver])
+
+  // Effect for active turn slide-in banner
+  useEffect(() => {
+    if (!matchState || isMatchOver) {
+      setTurnBanner(null)
+      return
+    }
+    const teamLabel = isMyTurn ? 'YOUR TURN' : "ENEMY'S TURN"
+    setTurnBanner(teamLabel)
+    const timer = setTimeout(() => {
+      setTurnBanner(null)
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [currentTurnPlayerIndex, isMyTurn, isMatchOver, matchState])
 
   useEffect(() => {
     // Reset target selection when turn changes
@@ -1313,7 +1360,7 @@ function App() {
 
         {page === 'battle' ? (
           <>
-            <section className="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 p-6 pb-32 md:pb-6">
+            <section className={`mt-6 rounded-xl border border-slate-800 bg-slate-900/40 p-6 pb-32 md:pb-6 transition-all duration-300 ${isShaking ? 'animate-shake' : ''}`}>
               <div className="grid gap-6">
                 <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1949,6 +1996,50 @@ function App() {
             {status}
           </div>
         ) : null}
+
+        {/* Dynamic Visual Polish Overlays */}
+        {flashWhite && (
+          <div className="fixed inset-0 bg-white pointer-events-none z-50 animate-flash-white" />
+        )}
+
+        {turnBanner && (
+          <div className="fixed top-1/3 left-1/2 z-40 animate-turn-banner pointer-events-none">
+            <div className={`px-8 py-4 rounded-xl border text-2xl font-black tracking-widest uppercase shadow-2xl ${
+              turnBanner === 'YOUR TURN'
+                ? 'bg-emerald-950/95 text-emerald-400 border-emerald-500/50 shadow-emerald-500/30'
+                : 'bg-rose-950/95 text-rose-400 border-rose-500/50 shadow-rose-500/30'
+            }`}>
+              {turnBanner}
+            </div>
+          </div>
+        )}
+
+        {ultimateSplash && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-50 pointer-events-none overflow-hidden">
+            <div className="absolute w-[500px] h-[500px] rounded-full border border-yellow-500/20 animate-ping opacity-25" />
+            <div className="relative flex flex-col items-center animate-ultimate-splash text-center px-4 w-full max-w-lg">
+              <div className="w-32 h-32 rounded-full border-4 border-yellow-400 overflow-hidden shadow-2xl shadow-yellow-500/40 bg-slate-900 mb-6">
+                <img 
+                  src={`/images/${ultimateSplash.heroId}.jpg`} 
+                  alt=""
+                  className="w-full h-full object-cover"
+                  onError={(e) => { e.target.src = `/images/${ultimateSplash.heroId}.png` }}
+                />
+              </div>
+              <div className="text-sm font-bold text-yellow-400 tracking-widest uppercase mb-1 drop-shadow">
+                {ultimateSplash.heroName} Activated
+              </div>
+              <h2 className="text-4xl md:text-5xl font-black text-white uppercase tracking-tight drop-shadow-lg" style={{
+                textShadow: '0 0 15px rgba(234,179,8,0.8), 0 0 30px rgba(234,179,8,0.4)'
+              }}>
+                {ultimateSplash.skillName}!
+              </h2>
+              <div className="mt-4 px-3 py-1 bg-yellow-400/20 text-yellow-300 border border-yellow-500/40 rounded-full text-xs font-semibold tracking-wider animate-pulse uppercase">
+                ⭐ Ultimate Skill ⭐
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
