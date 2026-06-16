@@ -1393,6 +1393,8 @@ io.on('connection', (socket) => {
         let reflected = 0
         let countered = 0
         let evaded = false
+        let itemStunApplied = false
+        let crit = false
         if (initial > 0) {
           const result = applyDamage(nextMatch, playerIndex, enemyIndex, initial, { isUltimate })
           nextMatch = result.match
@@ -1400,6 +1402,8 @@ io.on('connection', (socket) => {
           reflected = result.reflected
           countered = result.countered
           evaded = result.evaded
+          itemStunApplied = result.itemStunApplied
+          crit = result.crit
         }
         const enemyNext = getPlayerByIndex(nextMatch, enemyIndex)
         ensureEffects(enemyNext)
@@ -1414,6 +1418,8 @@ io.on('connection', (socket) => {
           evaded,
           reflected,
           countered,
+          itemStunApplied,
+          crit,
           applied: dotDamage > 0 ? { kind: 'dot', damage: dotDamage, turns } : undefined,
         })
       } else if (effectKind === 'burst_and_dot') {
@@ -1435,6 +1441,8 @@ io.on('connection', (socket) => {
           evaded: result.evaded,
           reflected: result.reflected,
           countered: result.countered,
+          itemStunApplied: result.itemStunApplied,
+          crit: result.crit,
           applied: dotDamage > 0 ? { kind: 'dot', damage: dotDamage, turns } : undefined,
         })
       } else if (effectKind === 'damage_and_shield') {
@@ -1454,6 +1462,8 @@ io.on('connection', (socket) => {
           evaded: result.evaded,
           reflected: result.reflected,
           countered: result.countered,
+          itemStunApplied: result.itemStunApplied,
+          crit: result.crit,
           gainedShield: shield,
         })
       } else if (effectKind === 'fortify') {
@@ -1485,6 +1495,8 @@ io.on('connection', (socket) => {
           evaded: result.evaded,
           reflected: result.reflected,
           countered: result.countered,
+          itemStunApplied: result.itemStunApplied,
+          crit: result.crit,
         })
       } else if (effectKind === 'execute') {
         const base = Math.max(0, Math.floor(effect.damage || 0))
@@ -1505,6 +1517,8 @@ io.on('connection', (socket) => {
           evaded: result.evaded,
           reflected: result.reflected,
           countered: result.countered,
+          itemStunApplied: result.itemStunApplied,
+          crit: result.crit,
         })
       } else if (effectKind === 'evasion') {
         const chance = Math.max(0, Math.min(1, Number(effect.chance || 0)))
