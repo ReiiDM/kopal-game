@@ -1257,30 +1257,6 @@ function App() {
           </p>
         </header>
 
-        {roomCode && (
-          <div className="mb-6 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-              💬 Trash Talk / Quick Taunt React
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {QUICK_TAUNTS.map((taunt) => (
-                <button
-                  key={taunt}
-                  type="button"
-                  onClick={() => {
-                    if (socket) {
-                      socket.emit('send-taunt', { tauntText: taunt })
-                    }
-                  }}
-                  className="px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-100 text-xs font-medium rounded-lg border border-slate-700 hover:border-slate-500 transition-all active:scale-95 duration-100"
-                >
-                  {taunt}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {page !== 'battle' && (
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm">
             <div className="text-slate-200">
@@ -2057,6 +2033,30 @@ function App() {
                     </div>
                   ) : null}
                 </div>
+
+                {/* Trash Talk Panel - visible on battle page below actions */}
+                <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    💬 Trash Talk / Quick Taunt React
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {QUICK_TAUNTS.map((taunt) => (
+                      <button
+                        key={taunt}
+                        type="button"
+                        onClick={() => {
+                          if (socket) {
+                            socket.emit('send-taunt', { tauntText: taunt })
+                          }
+                        }}
+                        className="px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-100 text-xs font-medium rounded-lg border border-slate-700 hover:border-slate-500 transition-all active:scale-95 duration-100"
+                      >
+                        {taunt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
               </div>
             </section>
 
