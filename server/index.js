@@ -1237,6 +1237,18 @@ io.on('connection', (socket) => {
           itemStunApplied: result.itemStunApplied,
           rolled,
         })
+      } else if (effectKind === 'reflect') {
+        const reflectPct = Math.max(0, Math.min(1, Number(effect.reflectPct || 0)))
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        actorNext.effects.reflect = { pct: reflectPct, turns }
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: playerIndex,
+          slot: index + 1,
+          name: skill.name,
+          applied: { kind: 'reflect', pct: reflectPct, turns },
+        })
       } else if (effectKind === 'damage_with_recoil') {
         const dmg = Math.max(0, Math.floor(effect.damage || 0))
         const recoilSelf = Math.max(0, Math.floor(effect.recoilSelf || 0))
