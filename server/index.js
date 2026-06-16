@@ -167,11 +167,11 @@ function getItemMods(player) {
     critDamagePct: ids.has('lucky_3_coins') ? 0.35 : 0,
     healPerTurn: ids.has('fishball_power') ? 5 : 0,
     reduceRandomCooldownBy: ids.has('energy_drink') ? 1 : 0,
-    flatDamageReduction: ids.has('jacket_ni_kuya') ? 2 : 0,
+    flatDamageReduction: ids.has('jacket_ni_kuya') ? 6 : 0,
     stunChanceOnDamage: ids.has('old_nokia') ? 0.25 : 0,
     debuffMultiplier: ids.has('chismis_notebook') ? 1.25 : 1,
     randomBuffEachTurn: ids.has('pamahiin_charm'),
-    ultimateDamageBonusPct: ids.has('final_blessing') ? 0.2 : 0,
+    ultimateDamageBonusPct: ids.has('final_blessing') ? 0.15 : 0,
   }
 }
 
@@ -211,8 +211,8 @@ function applyTurnStartItems(player, events) {
       events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'defense', pct: 0.1, turns: 1, playerIndex: player.playerIndex })
     } else {
       player.effects = player.effects && typeof player.effects === 'object' ? player.effects : {}
-      player.effects.evasion = { pct: 0.1, turns: 1 }
-      events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'evasion', pct: 0.1, turns: 1, playerIndex: player.playerIndex })
+      player.effects.evasion = { pct: 0.25, turns: 1 }
+      events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'evasion', pct: 0.25, turns: 1, playerIndex: player.playerIndex })
     }
   }
 }
@@ -302,9 +302,11 @@ function applyDamage(match, attackerIndex, targetIndex, rawAmount, context = {})
   }
 
   let itemStunApplied = false
-  if (finalDamage > 0 && attackerItemMods.stunChanceOnDamage > 0) {
-    const chance = Math.max(0, Math.min(1, attackerItemMods.stunChanceOnDamage))
-    if (Math.random() < chance) {
+  const itemStunChance = Math.max(0, Math.min(1, attackerItemMods.stunChanceOnDamage || 0))
+  const skillStunChance = Math.max(0, Math.min(1, Number(nextAttacker?.effects?.stunChancePct || 0)))
+  const totalStunChance = Math.min(1, itemStunChance + skillStunChance)
+  if (finalDamage > 0 && totalStunChance > 0) {
+    if (Math.random() < totalStunChance) {
       nextTarget.effects = nextTarget.effects && typeof nextTarget.effects === 'object' ? nextTarget.effects : {}
       nextTarget.effects.stunTurns = Math.max(0, Math.floor(nextTarget.effects.stunTurns || 0))
       nextTarget.effects.stunTurns = Math.max(nextTarget.effects.stunTurns, 1)
@@ -370,6 +372,16 @@ function startTurnTick(match, currentPlayerIndex) {
 
   const immunityTurns = Math.max(0, Math.floor(effects.immunityTurns || 0))
   effects.immunityTurns = immunityTurns > 0 ? immunityTurns - 1 : 0
+
+  // Stun chance from skill effects (e.g. Tara GYM!)
+  const stunChancePctTurns = Math.max(0, Math.floor(effects.stunChancePctTurns || 0))
+  if (stunChancePctTurns > 0) {
+    effects.stunChancePctTurns = stunChancePctTurns - 1
+    if (effects.stunChancePctTurns <= 0) {
+      delete effects.stunChancePctTurns
+      delete effects.stunChancePct
+    }
+  }
 
   // NOTE: stunTurns is intentionally NOT decremented here.
   // advanceTurn checks stunTurns AFTER startTurnTick runs and decrements it there
@@ -1039,6 +1051,13 @@ io.on('connection', (socket) => {
         return
       }
 
+      // minTurn lock — skill cannot be used before a certain turn
+      if (typeof skill.minTurn === 'number' && getTurnCount(match) < skill.minTurn) {
+        socket.emit('room-error', { error: `"${skill.name}" unlocks at Turn ${skill.minTurn}. Current turn: ${getTurnCount(match)}.` })
+        room.match = { ...match, actionLock: false }
+        return
+      }
+
       const effect = skill.effect
       const effectKind = effect?.kind
       if (!effectKind) {
@@ -1307,6 +1326,11 @@ io.on('connection', (socket) => {
           const bonusResult = applyDamage(nextMatch, playerIndex, enemyIndex, bonus, { isUltimate })
           nextMatch = bonusResult.match
           rolled = { kind: 'bonus_damage', amount: bonusResult.dealt }
+        } else if (roll?.kind === 'self_damage') {
+          const amount = Math.max(0, Math.floor(roll.amount || 0))
+          const selfResult = applyDamage(nextMatch, playerIndex, playerIndex, amount)
+          nextMatch = selfResult.match
+          rolled = { kind: 'self_damage', amount: selfResult.dealt }
         }
         log.push({
           kind: 'skill',
@@ -1393,8 +1417,8 @@ io.on('connection', (socket) => {
           applied: { kind: 'vulnerability', pct: bonus, turns },
         })
       } else if (effectKind === 'damage_over_time') {
-        const initial = Math.max(0, Math.floor(effect.initialDamage || 0))
-        const dotDamage = Math.max(0, Math.floor(effect.dotDamage || 0))
+        const mult = getItemMods(actorNext).debuffMultiplier
+        const dotDamage = Math.max(0, Math.floor(Math.max(0, Math.floor(effect.dotDamage || 0)) * mult))
         const turns = Math.max(1, Math.floor(effect.turns || 1))
         let dealt = 0
         let reflected = 0
@@ -1430,8 +1454,8 @@ io.on('connection', (socket) => {
           applied: dotDamage > 0 ? { kind: 'dot', damage: dotDamage, turns } : undefined,
         })
       } else if (effectKind === 'burst_and_dot') {
-        const burst = Math.max(0, Math.floor(effect.burstDamage || 0))
-        const dotDamage = Math.max(0, Math.floor(effect.dotDamage || 0))
+        const mult = getItemMods(actorNext).debuffMultiplier
+        const dotDamage = Math.max(0, Math.floor(Math.max(0, Math.floor(effect.dotDamage || 0)) * mult))
         const turns = Math.max(1, Math.floor(effect.turns || 1))
         const result = applyDamage(nextMatch, playerIndex, enemyIndex, burst, { isUltimate })
         nextMatch = result.match
@@ -1526,6 +1550,36 @@ io.on('connection', (socket) => {
           countered: result.countered,
           itemStunApplied: result.itemStunApplied,
           crit: result.crit,
+        })
+      } else if (effectKind === 'gym_mode') {
+        // Tara GYM! — Keith's ultimate
+        const healPct = Math.max(0, Math.min(1, Number(effect.healPct || 0)))
+        const attackUpPct = Math.max(0, Math.min(2, Number(effect.attackUpPct || 0)))
+        const stunChancePct = Math.max(0, Math.min(1, Number(effect.stunChancePct || 0)))
+        const armorPct = Math.max(0, Math.min(1, Number(effect.armorPct || 0)))
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        ensureEffects(actorNext)
+        // Heal 50% of base HP
+        const healAmount = Math.max(0, Math.floor((actorNext.baseHP || 1) * healPct))
+        const healed = applyHeal(actorNext, healAmount)
+        Object.assign(actorNext, healed.player)
+        // Attack boost
+        actorNext.effects.attack = { pct: attackUpPct, turns }
+        // Armor (damage reduction)
+        if (armorPct > 0) {
+          actorNext.effects.damageReduction = { pct: armorPct, turns }
+        }
+        // Stun chance on hit
+        actorNext.effects.stunChancePct = stunChancePct
+        actorNext.effects.stunChancePctTurns = turns
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: playerIndex,
+          slot: index + 1,
+          name: skill.name,
+          healedSelf: healed.healed,
+          applied: { kind: 'gym_mode', attackUpPct, stunChancePct, armorPct, turns },
         })
       } else if (effectKind === 'evasion') {
         const chance = Math.max(0, Math.min(1, Number(effect.chance || 0)))

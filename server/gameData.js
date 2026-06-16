@@ -58,7 +58,7 @@ export const HEROES = {
         name: 'Inday Rage Mode',
         description: '+Attack +Speed for 2 turns. Power mode ni Inday.',
         type: 'ultimate',
-        cooldown: 3,
+        cooldown: 4,
         effect: {
           kind: 'buff_attack_and_speed',
           attackUpPct: 0.25,
@@ -226,7 +226,7 @@ export const HEROES = {
     skills: [
       {
         name: 'Ay Beh!',
-        description: 'Medium damage + random effect: stun OR heal self OR extra damage.',
+        description: 'Medium damage + random effect: stun, heal self, extra damage, OR recoil.',
         type: 'damage',
         cooldown: 2,
         effect: {
@@ -236,6 +236,7 @@ export const HEROES = {
             { kind: 'stun', turns: 1 },
             { kind: 'heal_self', amount: 14 },
             { kind: 'bonus_damage', amount: 12 },
+            { kind: 'self_damage', amount: 8 },
           ],
           target: 'enemy',
           notes: 'Chaotic RNG effect table.',
@@ -245,7 +246,7 @@ export const HEROES = {
         name: 'Drama Mode',
         description: 'Enemy attack reduced + you gain small heal.',
         type: 'utility',
-        cooldown: 2,
+        cooldown: 3,
         effect: {
           kind: 'attack_down_and_heal',
           attackDownPct: 0.2,
@@ -279,6 +280,80 @@ export const HEROES = {
           recoilSelf: 10,
           target: 'enemy',
           notes: 'Big burst with recoil.',
+        },
+      },
+    ],
+  },
+
+  keith: {
+    id: 'keith',
+    name: 'Keith',
+    baseHP: 105,
+    normalAttack: {
+      name: 'Tamad na Suntok',
+      description: 'Walang gana pero nakakasakit pa rin. Walang cooldown.',
+      type: 'damage',
+      effect: {
+        kind: 'damage',
+        amount: 9,
+        target: 'enemy',
+      },
+    },
+    skills: [
+      {
+        name: 'Bahala Na, Basta Makatulog',
+        description: 'Bulag na swing — pag natama, masakit. Pag hindi, tulog ulit.',
+        type: 'damage',
+        cooldown: 2,
+        effect: {
+          kind: 'damage_with_miss',
+          damage: 32,
+          missChance: 0.35,
+          target: 'enemy',
+          notes: 'High risk — harder miss chance than Azel. Lazy glass cannon.',
+        },
+      },
+      {
+        name: 'Gym Tomorrow Na Lang',
+        description: 'Too lazy to fight back. Kapag tinamaan ka — your problem.',
+        type: 'defense',
+        cooldown: 3,
+        effect: {
+          kind: 'reflect',
+          reflectPct: 0.4,
+          turns: 2,
+          target: 'self',
+          notes: 'Reflects 40% of incoming damage for 2 turns. Passive staller.',
+        },
+      },
+      {
+        name: 'Sige, Isang Bigay Pa!',
+        description: 'Last rep energy. Hits hard pero sumasakit sa sarili.',
+        type: 'damage',
+        cooldown: 3,
+        effect: {
+          kind: 'damage_with_recoil',
+          damage: 42,
+          recoilSelf: 18,
+          target: 'enemy',
+          notes: 'Highest base skill damage — but takes heavy recoil. Very risky pre-Turn 8.',
+        },
+      },
+      {
+        name: 'Tara GYM!',
+        description: 'Nag-gym na si Keith. Heal + attack boost + stun chance + armor — lahat. God mode.',
+        type: 'ultimate',
+        cooldown: 6,
+        minTurn: 8,
+        effect: {
+          kind: 'gym_mode',
+          healPct: 0.5,
+          attackUpPct: 0.5,
+          stunChancePct: 0.25,
+          armorPct: 0.25,
+          turns: 3,
+          target: 'self',
+          notes: 'Cannot be used before Turn 8. Heals 50% max HP, +50% atk, +25% stun on hit, +25% damage reduction for 3 turns.',
         },
       },
     ],
@@ -345,9 +420,9 @@ export const GLOBAL_ITEMS = [
     description: 'Reduce damage taken (flat).',
     effect: {
       kind: 'flat_damage_reduction',
-      reduceBy: 4,
+      reduceBy: 6,
       mode: 'passive',
-      notes: 'Reduces incoming damage by 4 (after percentage reductions).',
+      notes: 'Reduces incoming damage by 6 (after percentage reductions).',
     },
   },
   {
@@ -365,12 +440,12 @@ export const GLOBAL_ITEMS = [
   {
     id: 'chismis_notebook',
     name: 'Chismis Notebook',
-    description: 'Increase debuff effects.',
+    description: 'Increase debuff & DOT effects.',
     effect: {
       kind: 'debuff_boost',
       debuffMultiplier: 1.25,
       mode: 'passive',
-      notes: 'Your debuffs are 25% stronger (e.g., attack down).',
+      notes: 'Your debuffs and DOTs are 25% stronger (e.g., attack down, damage over time).',
     },
   },
   {
@@ -390,9 +465,9 @@ export const GLOBAL_ITEMS = [
     description: 'Boost ultimate skill damage.',
     effect: {
       kind: 'ultimate_damage_boost',
-      bonusDamagePct: 0.2,
+      bonusDamagePct: 0.15,
       mode: 'passive',
-      notes: 'Ultimates deal +20% damage.',
+      notes: 'Ultimates deal +15% damage.',
     },
   }
 ]

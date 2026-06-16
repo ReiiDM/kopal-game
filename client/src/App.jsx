@@ -50,12 +50,21 @@ function App() {
     }
     if (kind === 'reflect') return [`Reflect: ${formatPct(effect.reflectPct ?? 0)} (${effect.turns ?? 1} turn/s)`]
     if (kind === 'damage_with_recoil') return [`Damage: ${effect.damage ?? 0}`, `Recoil self: ${effect.recoilSelf ?? 0}`]
+    if (kind === 'gym_mode') {
+      return [
+        `Heal: ${Math.round((effect.healPct ?? 0) * 100)}% of max HP`,
+        `Attack boost: +${Math.round((effect.attackUpPct ?? 0) * 100)}% (${effect.turns ?? 1} turn/s)`,
+        `Stun on hit: ${Math.round((effect.stunChancePct ?? 0) * 100)}% chance (${effect.turns ?? 1} turn/s)`,
+        `Armor: +${Math.round((effect.armorPct ?? 0) * 100)}% damage reduction (${effect.turns ?? 1} turn/s)`,
+      ]
+    }
     if (kind === 'damage_and_random') {
       const table = Array.isArray(effect.table) ? effect.table : []
       const rows = table.map((t) => {
         if (t.kind === 'stun') return `Random: Stun (${t.turns ?? 1} turn/s)`
         if (t.kind === 'heal_self') return `Random: Heal self (${t.amount ?? 0})`
         if (t.kind === 'bonus_damage') return `Random: Bonus damage (${t.amount ?? 0})`
+        if (t.kind === 'self_damage') return `Random: Recoil damage (${t.amount ?? 0})`
         return `Random: ${t.kind}`
       })
       return [`Damage: ${effect.damage ?? 0}`, ...rows]
@@ -76,7 +85,7 @@ function App() {
     if (kind === 'speed_up') return [`Turn start: reduce 1 random cooldown by ${effect.reduceRandomCooldownBy ?? 1}`]
     if (kind === 'flat_damage_reduction') return [`-${effect.reduceBy ?? 0} damage taken (flat)`]
     if (kind === 'stun_chance_on_damage') return [`On hit: ${formatPct(effect.chance ?? 0)} to stun (${effect.stunTurns ?? 1} turn/s)`]
-    if (kind === 'debuff_boost') return [`Debuffs are ${formatPct((effect.debuffMultiplier ?? 1) - 1)} stronger`]
+    if (kind === 'debuff_boost') return [`Debuffs and DOTs are ${formatPct((effect.debuffMultiplier ?? 1) - 1)} stronger`]
     if (kind === 'random_buff_each_turn') return ['Turn start: random small buff']
     if (kind === 'ultimate_damage_boost') return [`Ultimates deal +${formatPct(effect.bonusDamagePct ?? 0)} damage`]
     return [`Kind: ${kind}`]
@@ -458,6 +467,7 @@ function App() {
       if (entry.rolled?.kind === 'stun') parts.push(`(random: stun ${entry.rolled.turns} turn)`)
       if (entry.rolled?.kind === 'heal_self') parts.push(`(random: healed ${entry.rolled.amount})`)
       if (entry.rolled?.kind === 'bonus_damage') parts.push(`(random: +${entry.rolled.amount} bonus damage)`)
+      if (entry.rolled?.kind === 'self_damage') parts.push(`(random: took ${entry.rolled.amount} recoil damage)`)
       return parts.join(' ')
     }
 
@@ -523,6 +533,21 @@ function App() {
               playerIndex: entry.targetPlayerIndex,
               text: `+${entry.healed}`,
               type: 'heal'
+            }])
+            
+            setTimeout(() => {
+              setBattleEffects((prev) => prev.filter(e => e.id !== effectId))
+            }, 1500)
+          }
+
+          // Add effect for self_damage roll recoil
+          if (entry.rolled?.kind === 'self_damage' && entry.rolled.amount) {
+            const effectId = `${Date.now()}-${Math.random()}`
+            setBattleEffects((prev) => [...prev, {
+              id: effectId,
+              playerIndex: entry.actorPlayerIndex,
+              text: `-${entry.rolled.amount}`,
+              type: 'damage'
             }])
             
             setTimeout(() => {
@@ -1503,12 +1528,28 @@ function App() {
                               ⚡ Stunned {p.effects.stunTurns > 1 ? `(${p.effects.stunTurns} turns)` : '(1 turn)'}
                             </span>
                           )}
-                          {p.effects.attack && p.effects.attack.pct < 0 && <span className="px-2 py-1 bg-red-500/20 text-red-300 text-xs rounded-full">
-                            📉 Atk - {Math.abs(p.effects.attack.pct * 100)}%
-                          </span>}
-                          {p.effects.attack && p.effects.attack.pct > 0 && <span className="px-2 py-1 bg-green-500/20 text-green-300 text-xs rounded-full">
-                            📈 Atk + {p.effects.attack.pct * 100}%
-                          </span>}
+                          {p.effects.stunChancePctTurns > 0 && (
+                            <span
+                              className="px-2 py-1 text-xs rounded-full font-bold border"
+                              style={{
+                                background: 'rgba(251,146,60,0.2)',
+                                color: '#fb923c',
+                                borderColor: 'rgba(251,146,60,0.6)',
+                              }}
+                            >
+                              🏋️ GYM MODE ({p.effects.stunChancePctTurns} turns)
+                            </span>
+                          )}
+                          {p.effects.attack && p.effects.attack.pct < 0 && (
+                            <span className="px-2 py-1 bg-red-500/20 text-red-300 text-xs rounded-full">
+                              📉 Atk - {Math.abs(p.effects.attack.pct * 100)}%
+                            </span>
+                          )}
+                          {p.effects.attack && p.effects.attack.pct > 0 && (
+                            <span className="px-2 py-1 bg-green-500/20 text-green-300 text-xs rounded-full">
+                              📈 Atk + {p.effects.attack.pct * 100}%
+                            </span>
+                          )}
                           {p.effects.dodgeAllTurns > 0 && <span className="px-2 py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full">
                             🌀 Dodge All ({p.effects.dodgeAllTurns})
                           </span>}
@@ -1589,7 +1630,8 @@ function App() {
 
                       {(myHeroDef?.skills || []).map((s, index) => {
                         const cd = Array.isArray(myMatchPlayer?.cooldowns) ? myMatchPlayer.cooldowns[index] || 0 : 0
-                        const disabled = !isConnected || !isMyTurn || actionPending || cd > 0
+                        const turnLocked = typeof s.minTurn === 'number' && turnNumber < s.minTurn
+                        const disabled = !isConnected || !isMyTurn || actionPending || cd > 0 || turnLocked
                         const isUltimate = s.type === 'ultimate'
                         const cdProgress = cd > 0 ? ((s.cooldown - cd) / s.cooldown) * 100 : 100
                         return (
@@ -1623,11 +1665,13 @@ function App() {
                             <span className={`shrink-0 text-xs px-2 py-1 rounded-full ${
                               cd > 0 
                                 ? 'bg-slate-800 text-slate-400' 
-                                : isUltimate 
-                                  ? 'bg-yellow-500/30 text-yellow-300' 
-                                  : 'bg-green-500/30 text-green-300'
+                                : turnLocked
+                                  ? 'bg-orange-500/20 text-orange-300'
+                                  : isUltimate 
+                                    ? 'bg-yellow-500/30 text-yellow-300' 
+                                    : 'bg-green-500/30 text-green-300'
                             }`}>
-                              {cd > 0 ? `${cd} turn${cd > 1 ? 's' : ''}` : 'Ready'}
+                              {cd > 0 ? `${cd} turn${cd > 1 ? 's' : ''}` : turnLocked ? `🔒 Turn ${s.minTurn}` : 'Ready'}
                             </span>
                           </button>
                         )
