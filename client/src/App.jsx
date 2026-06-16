@@ -104,6 +104,7 @@ function App() {
   const [isSkillModalOpen, setIsSkillModalOpen] = useState(false) // To show skill detail modal
   const [showWinnerModal, setShowWinnerModal] = useState(false) // To control when winner modal appears
   const [roomPlayers, setRoomPlayers] = useState([]) // For tracking players in room with team info
+  const [selectedTarget, setSelectedTarget] = useState(null) // For selecting target in 2v2
   // Load win/loss from localStorage
   const [wins, setWins] = useState(() => {
     const saved = localStorage.getItem('kopal-wins')
@@ -792,6 +793,12 @@ function App() {
     return matchState.players.find((p) => p?.playerIndex === enemyIndex) || null
   }, [matchState, myPlayerIndex])
 
+  const enemyPlayers = useMemo(() => {
+    if (!matchState?.players || !myPlayerIndex) return []
+    const myTeam = (matchState.players.find(p => p.playerIndex === myPlayerIndex))?.team
+    return matchState.players.filter(p => p.team !== myTeam && (p.hp || 0) > 0)
+  }, [matchState, myPlayerIndex])
+
   const myHeroDef = myMatchPlayer?.heroId ? heroes?.[myMatchPlayer.heroId] : null
 
   const isMatchOver = Boolean(matchState?.endedAt)
@@ -815,18 +822,23 @@ function App() {
     }
   }, [isMatchOver])
 
+  useEffect(() => {
+    // Reset target selection when turn changes
+    setSelectedTarget(null)
+  }, [currentTurnPlayerIndex])
+
   function handleNormalAttack() {
     if (!socket || !matchState) return
     setActionPending(true)
     setStatus('Resolving...')
-    socket.emit('player-action', { kind: 'normal' })
+    socket.emit('player-action', { kind: 'normal', targetPlayerIndex: selectedTarget })
   }
 
   function handleSkill(index) {
     if (!socket || !matchState) return
     setActionPending(true)
     setStatus('Resolving...')
-    socket.emit('player-action', { kind: 'skill', skillIndex: index })
+    socket.emit('player-action', { kind: 'skill', skillIndex: index, targetPlayerIndex: selectedTarget })
   }
 
   function formatPlayerLabel(index, team) {
@@ -1430,6 +1442,45 @@ function App() {
                     )
                   })}
                 </div>
+
+                {/* Target selection (for 2v2) */}
+                {enemyPlayers.length > 1 && (
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4 mb-4">
+                    <div className="text-sm font-semibold mb-3">Select Target</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {enemyPlayers.map(p => (
+                        <button
+                          key={p.playerIndex}
+                          type="button"
+                          onClick={() => setSelectedTarget(p.playerIndex)}
+                          className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all duration-300 ${
+                            selectedTarget === p.playerIndex
+                              ? 'border-red-500 bg-red-950/30 shadow-[0_0_15px_rgba(239,68,68,0.3)]'
+                              : 'border-slate-700 bg-slate-950/30 hover:bg-slate-900/40'
+                          }`}
+                        >
+                          <div className="w-10 h-10 rounded-full border-2 border-slate-700 overflow-hidden bg-slate-800 flex items-center justify-center flex-shrink-0">
+                            <img
+                              src={`/images/${p.heroId}.jpg`}
+                              alt={p.heroName}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.src = `/images/${p.heroId}.png`
+                              }}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-medium">{formatPlayerLabel(p.playerIndex, p.team)}</div>
+                            <div className="text-xs text-slate-400 truncate">{p.heroName}</div>
+                            <div className="text-xs text-emerald-400 font-mono mt-1">
+                              HP {Math.max(0, p.hp || 0)}/{Math.max(1, p.baseHP || 1)}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Desktop: Action buttons - skills only in 2 columns */}
                 <div className={`hidden md:block rounded-lg border border-slate-800 bg-slate-950/30 p-4 ${actionPending ? 'animate-pulse' : ''}`}>

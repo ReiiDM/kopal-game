@@ -94,6 +94,18 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
 }
 
+function getPlayerTeam(match, playerIndex) {
+  const player = getPlayerByIndex(match, playerIndex)
+  return player?.team
+}
+
+function getEnemyPlayerIndices(match, playerIndex) {
+  const myTeam = getPlayerTeam(match, playerIndex)
+  if (!myTeam) return []
+  const enemies = match.players.filter(p => p.team !== myTeam && (p.hp || 0) > 0)
+  return enemies.map(p => p.playerIndex)
+}
+
 function getOpponentIndex(playerIndex) {
   return playerIndex === 1 ? 2 : 1
 }
@@ -789,7 +801,7 @@ io.on('connection', (socket) => {
     io.to(code).emit('play-again-init')
   })
 
-  socket.on('player-action', ({ kind, skillIndex } = {}) => {
+  socket.on('player-action', ({ kind, skillIndex, targetPlayerIndex } = {}) => {
     const code = socket.data.roomCode
     if (!code || !rooms.has(code)) {
       socket.emit('room-error', { error: 'Not in a room' })
@@ -849,7 +861,15 @@ io.on('connection', (socket) => {
     let nextMatch = JSON.parse(JSON.stringify(nextMatchBase))
     const log = []
 
-    const enemyIndex = getOpponentIndex(playerIndex)
+    let targetIndex
+    const enemyIndices = getEnemyPlayerIndices(match, playerIndex)
+    if (targetPlayerIndex && enemyIndices.includes(targetPlayerIndex)) {
+      targetIndex = targetPlayerIndex
+    } else {
+      // Fall back to first alive enemy
+      targetIndex = enemyIndices[0]
+    }
+    const enemyIndex = targetIndex || getOpponentIndex(playerIndex)
 
     if (kind === 'normal') {
       const effect = hero.normalAttack?.effect
