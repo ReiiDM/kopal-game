@@ -1424,7 +1424,7 @@ function App() {
                         </div>
                         {p.effects && typeof p.effects === 'object' && <div className="mt-3 flex flex-wrap gap-2">
                           {p.effects.stunTurns > 0 && <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 text-xs rounded-full">
-                            ⚡ Stunned ({p.effects.stunTurns}
+                            ⚡ Stunned ({p.effects.stunTurns})
                           </span>}
                           {p.effects.attack && p.effects.attack.pct < 0 && <span className="px-2 py-1 bg-red-500/20 text-red-300 text-xs rounded-full">
                             📉 Atk - {Math.abs(p.effects.attack.pct * 100)}%
@@ -1433,7 +1433,7 @@ function App() {
                             📈 Atk + {p.effects.attack.pct * 100}%
                           </span>}
                           {p.effects.dodgeAllTurns > 0 && <span className="px-2 py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full">
-                            🌀 Dodge All ({p.effects.dodgeAllTurns}
+                            🌀 Dodge All ({p.effects.dodgeAllTurns})
                           </span>}
                           {p.effects.immunityTurns > 0 && <span className="px-2 py-1 bg-cyan-500/20 text-cyan-300 text-xs rounded-full">
                             🛡️ Immune
@@ -1443,6 +1443,9 @@ function App() {
                           </span>}
                           {p.effects.reflect && <span className="px-2 py-1 bg-pink-500/20 text-pink-300 text-xs rounded-full">
                             🔄 Reflect
+                          </span>}
+                          {p.effects.extraTurnChanceTurns > 0 && <span className="px-2 py-1 bg-orange-500/20 text-orange-300 text-xs rounded-full">
+                            🎲 {p.effects.extraTurnChancePct * 100}% Extra Turn ({p.effects.extraTurnChanceTurns})
                           </span>}
                         </div>}
                       </div>

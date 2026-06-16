@@ -992,6 +992,7 @@ io.on('connection', (socket) => {
         let totalReflected = 0
         let totalCountered = 0
         let evaded = false
+        let itemStunApplied = false
         for (let i = 0; i < hits; i += 1) {
           const result = applyDamage(nextMatch, playerIndex, enemyIndex, perHit)
           nextMatch = result.match
@@ -999,6 +1000,7 @@ io.on('connection', (socket) => {
           totalReflected += result.reflected
           totalCountered += result.countered
           evaded = evaded || result.evaded
+          itemStunApplied = itemStunApplied || result.itemStunApplied
         }
         log.push({
           kind: 'normal',
@@ -1009,6 +1011,7 @@ io.on('connection', (socket) => {
           evaded,
           reflected: totalReflected,
           countered: totalCountered,
+          itemStunApplied,
         })
       }
     } else if (kind === 'skill') {
