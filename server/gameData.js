@@ -344,7 +344,7 @@ export const HEROES = {
         description: 'Nag-gym na si Keith. Heal + attack boost + stun chance + armor — lahat. God mode.',
         type: 'ultimate',
         cooldown: 6,
-        minTurn: 8,
+        minTurn: 12,
         effect: {
           kind: 'gym_mode',
           healPct: 0.5,
@@ -353,7 +353,7 @@ export const HEROES = {
           armorPct: 0.25,
           turns: 3,
           target: 'self',
-          notes: 'Cannot be used before Turn 8. Heals 50% max HP, +50% atk, +25% stun on hit, +25% damage reduction for 3 turns.',
+          notes: 'Cannot be used before Turn 12. Heals 50% max HP, +50% atk, +25% stun on hit, +25% damage reduction for 3 turns.',
         },
       },
     ],
