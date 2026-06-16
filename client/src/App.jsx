@@ -1330,12 +1330,26 @@ function App() {
                         key={p.playerIndex}
                         className={`relative rounded-lg border bg-slate-950/30 p-4 transition-all duration-300 ${
                           isStunned
-                            ? 'border-yellow-400/70 stun-card'
+                            ? 'border-yellow-400'
                             : isCurrentTurn
                               ? `${teamColor} ring-2 ring-indigo-500`
                               : teamColor
                         }`}
+                        style={isStunned ? {
+                          animation: 'stunBorder 0.9s ease-in-out infinite',
+                          boxShadow: '0 0 16px 4px rgba(234,179,8,0.6)'
+                        } : {}}
                       >
+                        {/* Full-card stun yellow tint overlay */}
+                        {isStunned && (
+                          <div
+                            className="absolute inset-0 rounded-lg pointer-events-none z-10"
+                            style={{
+                              background: 'rgba(234,179,8,0.08)',
+                              animation: 'stunFlicker 0.9s ease-in-out infinite'
+                            }}
+                          />
+                        )}
                         {/* Item images in top left corner */}
                         <div className="absolute top-2 left-2 flex gap-1 flex-wrap max-w-24 z-10">
                           {Array.isArray(p.itemIds) && p.itemIds.map((itemId) => {
@@ -1372,63 +1386,80 @@ function App() {
                           })}
                         </div>
                         
-                        {/* Hero Image */}
+                        {/* Hero Image with stun overlay OUTSIDE overflow-hidden */}
                         <div className="flex justify-center mb-3">
-                          <div className={`relative w-20 h-20 rounded-full border-4 overflow-hidden bg-slate-800 flex items-center justify-center ${
-                            isStunned ? 'border-yellow-400' : 'border-slate-700'
-                          }`}>
-                            <img 
-                              src={heroImagePath} 
-                              alt={p.heroName || 'Hero'} 
-                              className={`w-full h-full object-cover ${
-                                isStunned ? 'brightness-75 saturate-50' : ''
-                              }`}
-                              onError={(e) => {
-                                e.target.src = `/images/${p.heroId}.png`
-                                e.target.onerror = (e2) => {
-                                  e2.target.src = placeholderImage
-                                  e2.target.onerror = (e3) => {
-                                    e3.target.style.display = 'none'
-                                    e3.target.nextElementSibling.style.display = 'flex'
+                          <div className="relative">
+                            <div className={`w-20 h-20 rounded-full border-4 overflow-hidden bg-slate-800 flex items-center justify-center ${
+                              isStunned ? 'border-yellow-400' : 'border-slate-700'
+                            }`}>
+                              <img 
+                                src={heroImagePath} 
+                                alt={p.heroName || 'Hero'} 
+                                className="w-full h-full object-cover"
+                                style={isStunned ? { filter: 'brightness(0.65) saturate(0.4)' } : {}}
+                                onError={(e) => {
+                                  e.target.src = `/images/${p.heroId}.png`
+                                  e.target.onerror = (e2) => {
+                                    e2.target.src = placeholderImage
+                                    e2.target.onerror = (e3) => {
+                                      e3.target.style.display = 'none'
+                                      e3.target.nextElementSibling.style.display = 'flex'
+                                    }
                                   }
-                                }
-                              }}
-                            />
-                            <div className="w-full h-full flex items-center justify-center text-3xl text-slate-500" style={{ display: 'none' }}>
-                              {p.heroName?.charAt(0) || '?'}
+                                }}
+                              />
+                              <div className="w-full h-full flex items-center justify-center text-3xl text-slate-500" style={{ display: 'none' }}>
+                                {p.heroName?.charAt(0) || '?'}
+                              </div>
                             </div>
-                            {/* Stun overlay on portrait */}
+                            {/* ⚡ Stun overlay — OUTSIDE overflow-hidden so it's always visible */}
                             {isStunned && (
-                              <div className="absolute inset-0 rounded-full bg-yellow-400/30 flex items-center justify-center animate-stun-flicker pointer-events-none">
-                                <span className="text-2xl drop-shadow-lg">⚡</span>
+                              <div
+                                className="absolute inset-0 rounded-full flex items-center justify-center pointer-events-none"
+                                style={{
+                                  background: 'rgba(234,179,8,0.35)',
+                                  animation: 'stunFlicker 0.8s ease-in-out infinite'
+                                }}
+                              >
+                                <span style={{ fontSize: '1.6rem', lineHeight: 1, filter: 'drop-shadow(0 0 6px rgba(234,179,8,1))' }}>⚡</span>
                               </div>
                             )}
                           </div>
                         </div>
                         
-                        {/* Temporary battle effects */}
+                        {/* Temporary battle effects (damage numbers, STUNNED!, etc.) */}
                         {playerEffects.length > 0 && (
-                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20">
-                            {playerEffects.map((effect, i) => {
-                              let colorClass = 'text-white'
-                              if (effect.type === 'damage') colorClass = 'text-red-400'
-                              if (effect.type === 'heal') colorClass = 'text-green-400'
-                              if (effect.type === 'shield') colorClass = 'text-sky-400'
-                              if (effect.type === 'miss' || effect.type === 'dodge') colorClass = 'text-yellow-300'
-                              if (effect.type === 'stun') colorClass = 'text-yellow-300'
-                              
-                              return (
-                                <div 
-                                  key={effect.id}
-                                  className={`font-bold animate-float-up ${colorClass} ${
-                                    effect.type === 'stun' ? 'text-xl' : 'text-2xl'
-                                  }`}
-                                  style={{ animationDelay: `${i * 0.05}s` }}
-                                >
-                                  {effect.text}
-                                </div>
-                              )
-                            })}
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+                            <div className="flex flex-col items-center gap-1">
+                              {playerEffects.map((effect, i) => {
+                                const colors = {
+                                  damage: '#f87171',
+                                  heal: '#4ade80',
+                                  shield: '#38bdf8',
+                                  miss: '#fde68a',
+                                  dodge: '#fde68a',
+                                  stun: '#fde047'
+                                }
+                                const color = colors[effect.type] || '#fff'
+                                return (
+                                  <div
+                                    key={effect.id}
+                                    style={{
+                                      color,
+                                      fontWeight: 'bold',
+                                      fontSize: effect.type === 'stun' ? '1.1rem' : '1.4rem',
+                                      textShadow: `0 0 8px ${color}`,
+                                      animation: 'floatUp 1.5s ease-out forwards',
+                                      animationDelay: `${i * 0.06}s`,
+                                      opacity: 0,
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    {effect.text}
+                                  </div>
+                                )
+                              })}
+                            </div>
                           </div>
                         )}
 
@@ -1459,9 +1490,19 @@ function App() {
                           </div>
                         </div>
                         {p.effects && typeof p.effects === 'object' && <div className="mt-3 flex flex-wrap gap-2">
-                          {p.effects.stunTurns > 0 && <span className="px-2 py-1 bg-yellow-400/25 text-yellow-300 text-xs rounded-full font-bold border border-yellow-400/50 animate-stun-glow">
-                            ⚡ Stunned {p.effects.stunTurns > 1 ? `(${p.effects.stunTurns} turns)` : '(1 turn)'}
-                          </span>}
+                          {p.effects.stunTurns > 0 && (
+                            <span
+                              className="px-2 py-1 text-xs rounded-full font-bold border"
+                              style={{
+                                background: 'rgba(234,179,8,0.2)',
+                                color: '#fde047',
+                                borderColor: 'rgba(234,179,8,0.6)',
+                                animation: 'stunGlow 0.9s ease-in-out infinite'
+                              }}
+                            >
+                              ⚡ Stunned {p.effects.stunTurns > 1 ? `(${p.effects.stunTurns} turns)` : '(1 turn)'}
+                            </span>
+                          )}
                           {p.effects.attack && p.effects.attack.pct < 0 && <span className="px-2 py-1 bg-red-500/20 text-red-300 text-xs rounded-full">
                             📉 Atk - {Math.abs(p.effects.attack.pct * 100)}%
                           </span>}

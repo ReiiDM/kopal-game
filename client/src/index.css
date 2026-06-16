@@ -8,6 +8,7 @@ body,
   height: 100%;
 }
 
+/* Confetti fall animation */
 @keyframes fall {
   0% {
     transform: translateY(-100px) rotate(0deg);
@@ -18,51 +19,40 @@ body,
     opacity: 0;
   }
 }
-
 .animate-fall {
   animation: fall linear forwards;
   font-size: 2rem;
 }
 
-/* Stun overlay flicker on hero card */
-@keyframes stun-flicker {
-  0%, 100% { opacity: 0.55; }
-  25%       { opacity: 0.85; }
-  50%       { opacity: 0.4;  }
-  75%       { opacity: 0.75; }
+/* ====================================
+   STUN VISUAL EFFECTS
+   Referenced by name in App.jsx inline
+   style={{ animation: 'stunFlicker ...' }}
+   so they MUST live here as @keyframes.
+   ==================================== */
+
+/* Overlay flicker on portrait & card */
+@keyframes stunFlicker {
+  0%, 100% { opacity: 0.5; }
+  30%       { opacity: 0.9; }
+  60%       { opacity: 0.35; }
 }
 
-.animate-stun-flicker {
-  animation: stun-flicker 0.8s ease-in-out infinite;
+/* Pulsing outer glow on the card border */
+@keyframes stunBorder {
+  0%, 100% { box-shadow: 0 0 6px 2px rgba(234,179,8,0.4); }
+  50%       { box-shadow: 0 0 20px 6px rgba(234,179,8,0.9); }
 }
 
-/* Float-up pop text (damage numbers, STUNNED!, etc.) */
-@keyframes float-up {
-  0%   { opacity: 1;   transform: translateY(0)     scale(1); }
-  60%  { opacity: 1;   transform: translateY(-32px)  scale(1.15); }
-  100% { opacity: 0;   transform: translateY(-60px)  scale(0.9); }
+/* Badge glow pulse */
+@keyframes stunGlow {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(234,179,8,0.5); }
+  50%       { box-shadow: 0 0 14px 4px rgba(234,179,8,1); }
 }
 
-.animate-float-up {
-  animation: float-up 1.4s ease-out forwards;
-}
-
-/* Stun badge pulse glow */
-@keyframes stun-glow {
-  0%, 100% { box-shadow: 0 0 4px 1px rgba(234,179,8,0.5);  }
-  50%       { box-shadow: 0 0 12px 4px rgba(234,179,8,0.9); }
-}
-
-.animate-stun-glow {
-  animation: stun-glow 0.9s ease-in-out infinite;
-}
-
-/* Card border shock when stunned */
-@keyframes stun-border {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(234,179,8,0.3); }
-  50%       { box-shadow: 0 0 16px 4px rgba(234,179,8,0.8); }
-}
-
-.stun-card {
-  animation: stun-border 0.9s ease-in-out infinite;
+/* Float-up for damage numbers / STUNNED! pop text */
+@keyframes floatUp {
+  0%   { opacity: 1; transform: translateY(0)    scale(1);    }
+  50%  { opacity: 1; transform: translateY(-24px) scale(1.15); }
+  100% { opacity: 0; transform: translateY(-52px) scale(0.9);  }
 }
