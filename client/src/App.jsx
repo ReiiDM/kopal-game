@@ -571,6 +571,25 @@ function App() {
               setBattleEffects((prev) => prev.filter(e => e.id !== effectId))
             }, 1500)
           }
+
+          // Stun pop-up: Nokia or skill-based stun
+          const stunTarget = entry.targetPlayerIndex || entry.actorPlayerIndex
+          const stunTriggered =
+            entry.itemStunApplied ||
+            entry.applied?.kind === 'stun' ||
+            entry.rolled?.kind === 'stun'
+          if (stunTriggered && stunTarget) {
+            const effectId = `${Date.now()}-${Math.random()}`
+            setBattleEffects((prev) => [...prev, {
+              id: effectId,
+              playerIndex: stunTarget,
+              text: '⚡ STUNNED!',
+              type: 'stun'
+            }])
+            setTimeout(() => {
+              setBattleEffects((prev) => prev.filter(e => e.id !== effectId))
+            }, 2000)
+          }
         }
       }
       const tickEvents = Array.isArray(payload?.tickEvents) ? payload.tickEvents : []
@@ -1304,13 +1323,17 @@ function App() {
                       ? 'border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.2)]' 
                       : 'border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.2)]'
                     
+                    const isStunned = (p.effects?.stunTurns || 0) > 0
+
                     return (
                       <div
                         key={p.playerIndex}
                         className={`relative rounded-lg border bg-slate-950/30 p-4 transition-all duration-300 ${
-                          isCurrentTurn
-                            ? `${teamColor} ring-2 ring-indigo-500`
-                            : teamColor
+                          isStunned
+                            ? 'border-yellow-400/70 stun-card'
+                            : isCurrentTurn
+                              ? `${teamColor} ring-2 ring-indigo-500`
+                              : teamColor
                         }`}
                       >
                         {/* Item images in top left corner */}
@@ -1351,11 +1374,15 @@ function App() {
                         
                         {/* Hero Image */}
                         <div className="flex justify-center mb-3">
-                          <div className="w-20 h-20 rounded-full border-4 border-slate-700 overflow-hidden bg-slate-800 flex items-center justify-center">
+                          <div className={`relative w-20 h-20 rounded-full border-4 overflow-hidden bg-slate-800 flex items-center justify-center ${
+                            isStunned ? 'border-yellow-400' : 'border-slate-700'
+                          }`}>
                             <img 
                               src={heroImagePath} 
                               alt={p.heroName || 'Hero'} 
-                              className="w-full h-full object-cover"
+                              className={`w-full h-full object-cover ${
+                                isStunned ? 'brightness-75 saturate-50' : ''
+                              }`}
                               onError={(e) => {
                                 e.target.src = `/images/${p.heroId}.png`
                                 e.target.onerror = (e2) => {
@@ -1370,6 +1397,12 @@ function App() {
                             <div className="w-full h-full flex items-center justify-center text-3xl text-slate-500" style={{ display: 'none' }}>
                               {p.heroName?.charAt(0) || '?'}
                             </div>
+                            {/* Stun overlay on portrait */}
+                            {isStunned && (
+                              <div className="absolute inset-0 rounded-full bg-yellow-400/30 flex items-center justify-center animate-stun-flicker pointer-events-none">
+                                <span className="text-2xl drop-shadow-lg">⚡</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                         
@@ -1382,11 +1415,14 @@ function App() {
                               if (effect.type === 'heal') colorClass = 'text-green-400'
                               if (effect.type === 'shield') colorClass = 'text-sky-400'
                               if (effect.type === 'miss' || effect.type === 'dodge') colorClass = 'text-yellow-300'
+                              if (effect.type === 'stun') colorClass = 'text-yellow-300'
                               
                               return (
                                 <div 
                                   key={effect.id}
-                                  className={`text-2xl font-bold animate-float-up ${colorClass}`}
+                                  className={`font-bold animate-float-up ${colorClass} ${
+                                    effect.type === 'stun' ? 'text-xl' : 'text-2xl'
+                                  }`}
                                   style={{ animationDelay: `${i * 0.05}s` }}
                                 >
                                   {effect.text}
@@ -1423,8 +1459,8 @@ function App() {
                           </div>
                         </div>
                         {p.effects && typeof p.effects === 'object' && <div className="mt-3 flex flex-wrap gap-2">
-                          {p.effects.stunTurns > 0 && <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 text-xs rounded-full">
-                            ⚡ Stunned ({p.effects.stunTurns})
+                          {p.effects.stunTurns > 0 && <span className="px-2 py-1 bg-yellow-400/25 text-yellow-300 text-xs rounded-full font-bold border border-yellow-400/50 animate-stun-glow">
+                            ⚡ Stunned {p.effects.stunTurns > 1 ? `(${p.effects.stunTurns} turns)` : '(1 turn)'}
                           </span>}
                           {p.effects.attack && p.effects.attack.pct < 0 && <span className="px-2 py-1 bg-red-500/20 text-red-300 text-xs rounded-full">
                             📉 Atk - {Math.abs(p.effects.attack.pct * 100)}%

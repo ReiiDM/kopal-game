@@ -23,3 +23,46 @@ body,
   animation: fall linear forwards;
   font-size: 2rem;
 }
+
+/* Stun overlay flicker on hero card */
+@keyframes stun-flicker {
+  0%, 100% { opacity: 0.55; }
+  25%       { opacity: 0.85; }
+  50%       { opacity: 0.4;  }
+  75%       { opacity: 0.75; }
+}
+
+.animate-stun-flicker {
+  animation: stun-flicker 0.8s ease-in-out infinite;
+}
+
+/* Float-up pop text (damage numbers, STUNNED!, etc.) */
+@keyframes float-up {
+  0%   { opacity: 1;   transform: translateY(0)     scale(1); }
+  60%  { opacity: 1;   transform: translateY(-32px)  scale(1.15); }
+  100% { opacity: 0;   transform: translateY(-60px)  scale(0.9); }
+}
+
+.animate-float-up {
+  animation: float-up 1.4s ease-out forwards;
+}
+
+/* Stun badge pulse glow */
+@keyframes stun-glow {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(234,179,8,0.5);  }
+  50%       { box-shadow: 0 0 12px 4px rgba(234,179,8,0.9); }
+}
+
+.animate-stun-glow {
+  animation: stun-glow 0.9s ease-in-out infinite;
+}
+
+/* Card border shock when stunned */
+@keyframes stun-border {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(234,179,8,0.3); }
+  50%       { box-shadow: 0 0 16px 4px rgba(234,179,8,0.8); }
+}
+
+.stun-card {
+  animation: stun-border 0.9s ease-in-out infinite;
+}
