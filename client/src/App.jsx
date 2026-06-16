@@ -348,9 +348,9 @@ function App() {
     function onRoomReady(payload) {
       setIsReady(true)
       if (payload?.roomCode) {
-        setStatus(`Both players connected in ${payload.roomCode}.`)
+        setStatus(`Room ${payload.roomCode} ready (${playerCount === 2 ? '1v1' : '2v2'} mode).`)
       } else {
-        setStatus('Both players connected.')
+        setStatus('Room ready.')
       }
     }
 
@@ -1233,7 +1233,7 @@ function App() {
                       disabled={!isConnected || hasSentReady || !selectedHero}
                     >
                       {hasSentReady ? (
-                        <>⏳ Waiting for all players...</>
+                        <>⏳ Waiting for other players...</>
                       ) : (
                         <>🎉 I'm Ready!</>
                       )}

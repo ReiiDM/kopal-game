@@ -643,7 +643,7 @@ io.on('connection', (socket) => {
     const readyCount = [...room.players.values()].filter((p) => p.isReady).length
     socket.emit('player-ready-state', { roomCode: code, readyCount, playerCount: room.players.size })
 
-    if (room.players.size === 4) {
+    if (room.players.size === 2 || room.players.size === 4) {
       io.to(code).emit('room-ready', { roomCode: code })
     }
   })
@@ -734,10 +734,13 @@ io.on('connection', (socket) => {
     io.to(code).emit('player-ready-state', { roomCode: code, readyCount, playerCount: room.players.size })
     broadcastRoomState(code)
 
-    // Check if all ready, 4 players, 2 per team
+    // Check for 1v1 (2 players, 1 per team, all ready) OR 2v2 (4 players, 2 per team, all ready)
     const team1Players = [...room.players.values()].filter(p => p.team === 1)
     const team2Players = [...room.players.values()].filter(p => p.team === 2)
-    const allReady = team1Players.length === 2 && team2Players.length === 2 && [...room.players.values()].every(p => p.isReady)
+    const allPlayersReady = [...room.players.values()].every(p => p.isReady)
+    const is1v1Ready = team1Players.length === 1 && team2Players.length === 1 && allPlayersReady
+    const is2v2Ready = team1Players.length === 2 && team2Players.length === 2 && allPlayersReady
+    const allReady = is1v1Ready || is2v2Ready
     if (!allReady || room.match) return
 
     // Create match
