@@ -66,10 +66,19 @@ function getMemberCount(roomCode) {
 }
 
 function broadcastRoomState(roomCode) {
+  const room = rooms.get(roomCode)
+  if (!room) return
+  // Map players to include team, ready state, etc.
+  const players = [...room.players.entries()].map(([id, p]) => ({
+    socketId: id,
+    team: p.team,
+    isReady: p.isReady,
+  }))
   io.to(roomCode).emit('room-state', {
     roomCode,
-    playerCount: getMemberCount(roomCode),
-    maxPlayers: 2,
+    playerCount: room.players.size,
+    maxPlayers: 4,
+    players,
   })
 }
 
@@ -358,45 +367,77 @@ function startTurnTick(match, currentPlayerIndex) {
 }
 
 function isMatchOver(match) {
-  const p1 = getPlayerByIndex(match, 1)
-  const p2 = getPlayerByIndex(match, 2)
-  if (!p1 || !p2) return false
-  return (p1.hp || 0) <= 0 || (p2.hp || 0) <= 0
+  const players = match.players || []
+  if (players.length < 2) return false
+  
+  const team1Players = players.filter(p => p.team === 1)
+  const team2Players = players.filter(p => p.team === 2)
+  
+  const team1Alive = team1Players.some(p => (p.hp || 0) > 0)
+  const team2Alive = team2Players.some(p => (p.hp || 0) > 0)
+  
+  return !team1Alive || !team2Alive
 }
 
 function isTurnLimitReached(match) {
-  return getTurnCount(match) >= 10
+  return getTurnCount(match) >= 15
 }
 
 function finalizeWinner(match) {
-  const p1 = getPlayerByIndex(match, 1)
-  const p2 = getPlayerByIndex(match, 2)
-  if (!p1 || !p2) return match
-  if ((p1.hp || 0) <= 0 && (p2.hp || 0) <= 0) {
+  const players = match.players || []
+  if (players.length < 2) return match
+  
+  const team1Players = players.filter(p => p.team === 1)
+  const team2Players = players.filter(p => p.team === 2)
+  
+  const team1Alive = team1Players.some(p => (p.hp || 0) > 0)
+  const team2Alive = team2Players.some(p => (p.hp || 0) > 0)
+  
+  if (!team1Alive && !team2Alive) {
     return { ...match, endedAt: Date.now(), result: { kind: 'draw', reason: 'hp_zero' } }
   }
-  if ((p1.hp || 0) <= 0) {
-    return { ...match, endedAt: Date.now(), result: { kind: 'win', winnerPlayerIndex: 2, reason: 'hp_zero' } }
+  
+  const winningTeam = team1Alive ? 1 : 2
+  const anyWinner = players.find(p => p.team === winningTeam && (p.hp || 0) > 0)
+  
+  return { 
+    ...match, 
+    endedAt: Date.now(), 
+    result: { 
+      kind: 'win', 
+      winnerPlayerIndex: anyWinner?.playerIndex,
+      winningTeam,
+      reason: 'hp_zero' 
+    } 
   }
-  if ((p2.hp || 0) <= 0) {
-    return { ...match, endedAt: Date.now(), result: { kind: 'win', winnerPlayerIndex: 1, reason: 'hp_zero' } }
-  }
-  return match
 }
 
 function finalizeByTurnLimit(match) {
-  const p1 = getPlayerByIndex(match, 1)
-  const p2 = getPlayerByIndex(match, 2)
-  if (!p1 || !p2) return match
-  const hp1 = Math.max(0, Math.floor(p1.hp || 0))
-  const hp2 = Math.max(0, Math.floor(p2.hp || 0))
-  if (hp1 === hp2) {
+  const players = match.players || []
+  if (players.length < 2) return match
+  
+  const team1Players = players.filter(p => p.team === 1)
+  const team2Players = players.filter(p => p.team === 2)
+  
+  const team1TotalHp = team1Players.reduce((sum, p) => sum + Math.max(0, Math.floor(p.hp || 0)), 0)
+  const team2TotalHp = team2Players.reduce((sum, p) => sum + Math.max(0, Math.floor(p.hp || 0)), 0)
+  
+  if (team1TotalHp === team2TotalHp) {
     return { ...match, endedAt: Date.now(), result: { kind: 'draw', reason: 'turn_limit' } }
   }
+  
+  const winningTeam = team1TotalHp > team2TotalHp ? 1 : 2
+  const anyWinner = players.find(p => p.team === winningTeam && (p.hp || 0) > 0)
+  
   return {
     ...match,
     endedAt: Date.now(),
-    result: { kind: 'win', winnerPlayerIndex: hp1 > hp2 ? 1 : 2, reason: 'turn_limit' },
+    result: { 
+      kind: 'win', 
+      winnerPlayerIndex: anyWinner?.playerIndex,
+      winningTeam,
+      reason: 'turn_limit' 
+    },
   }
 }
 
@@ -408,7 +449,13 @@ function maybeFinalizeMatch(match) {
 
 function advanceTurn(match) {
   const currentTurnPlayerIndex = match.currentTurnPlayerIndex ?? match.activePlayerIndex
-  const nextPlayerIndex = currentTurnPlayerIndex === 1 ? 2 : 1
+  const players = match.players || []
+  const playerIndices = players.map(p => p.playerIndex).sort((a, b) => a - b)
+  
+  const currentIdx = playerIndices.indexOf(currentTurnPlayerIndex)
+  const nextIdx = (currentIdx + 1) % playerIndices.length
+  const nextPlayerIndex = playerIndices[nextIdx]
+  
   const nextTurnCount = (match.turnCount ?? match.turn ?? 1) + 1
 
   let nextMatch = {
@@ -442,6 +489,7 @@ function createMatchFromPlayerDescriptors(roomCode, descriptors) {
       return {
         playerIndex: d.playerIndex,
         socketId: d.socketId,
+        team: d.team,
         heroId: d.heroId,
         heroName: hero.name,
         baseHP: hero.baseHP,
@@ -455,9 +503,9 @@ function createMatchFromPlayerDescriptors(roomCode, descriptors) {
     .filter(Boolean)
     .sort((a, b) => a.playerIndex - b.playerIndex)
 
-  if (players.length !== 2) return null
+  if (players.length < 2) return null
 
-  const startingPlayerIndex = Math.random() < 0.5 ? 1 : 2
+  const startingPlayerIndex = 1
   let matchState = {
     roomCode,
     startedAt: Date.now(),
@@ -523,7 +571,7 @@ app.get('/api/rooms/:code', (req, res) => {
   return res.json({
     roomCode,
     playerCount: room.players.size,
-    maxPlayers: 2,
+    maxPlayers: 4,
   })
 })
 
@@ -543,9 +591,13 @@ io.on('connection', (socket) => {
 
     socket.join(roomCode)
     socket.data.roomCode = roomCode
-    room.players.set(socket.id, { joinedAt: Date.now(), setup: null, isReady: false, readyAt: undefined })
+    // Assign new player to team with fewer players (default to team 1
+    const team1Count = [...room.players.values()].filter(p => p.team === 1).length
+    const team2Count = [...room.players.values()].filter(p => p.team === 2).length
+    const newTeam = team1Count <= team2Count ? 1 : 2
+    room.players.set(socket.id, { joinedAt: Date.now(), setup: null, isReady: false, readyAt: undefined, team: newTeam })
 
-    socket.emit('room-created', { roomCode, playerCount: 1, maxPlayers: 2 })
+    socket.emit('room-created', { roomCode, playerCount: 1, maxPlayers: 4 })
     broadcastRoomState(roomCode)
   })
 
@@ -559,16 +611,20 @@ io.on('connection', (socket) => {
     }
 
     const room = rooms.get(code)
-    if (room.players.size >= 2) {
+    if (room.players.size >= 4) {
       socket.emit('room-error', { error: 'Room is full' })
       return
     }
 
     socket.join(code)
     socket.data.roomCode = code
-    room.players.set(socket.id, { joinedAt: Date.now(), setup: null, isReady: false, readyAt: undefined })
+    // Assign new player to team with fewer players
+    const team1Count = [...room.players.values()].filter(p => p.team === 1).length
+    const team2Count = [...room.players.values()].filter(p => p.team === 2).length
+    const newTeam = team1Count <= team2Count ? 1 : 2
+    room.players.set(socket.id, { joinedAt: Date.now(), setup: null, isReady: false, readyAt: undefined, team: newTeam })
 
-    socket.emit('room-joined', { roomCode: code, playerCount: room.players.size, maxPlayers: 2 })
+    socket.emit('room-joined', { roomCode: code, playerCount: room.players.size, maxPlayers: 4 })
     socket.to(code).emit('player-joined', { roomCode: code })
 
     broadcastRoomState(code)
@@ -582,9 +638,40 @@ io.on('connection', (socket) => {
     const readyCount = [...room.players.values()].filter((p) => p.isReady).length
     socket.emit('player-ready-state', { roomCode: code, readyCount, playerCount: room.players.size })
 
-    if (room.players.size === 2) {
+    if (room.players.size === 4) {
       io.to(code).emit('room-ready', { roomCode: code })
     }
+  })
+
+  socket.on('switch-team', () => {
+    const code = socket.data.roomCode
+    if (!code || !rooms.has(code)) {
+      socket.emit('room-error', { error: 'Not in a room' })
+      return
+    }
+
+    const room = rooms.get(code)
+    const player = room.players.get(socket.id)
+    if (!player) {
+      socket.emit('room-error', { error: 'Player not registered in room' })
+      return
+    }
+
+    if (player.isReady || room.match) {
+      socket.emit('room-error', { error: 'Can\'t switch teams while ready or in match' })
+      return
+    }
+
+    // Check if other team still has room
+    const newTeam = player.team === 1 ? 2 : 1
+    const otherTeamCount = [...room.players.values()].filter(p => p.team === newTeam).length
+    if (otherTeamCount >= 2) {
+      socket.emit('room-error', { error: 'Other team is full' })
+      return
+    }
+
+    room.players.set(socket.id, { ...player, team: newTeam })
+    broadcastRoomState(code)
   })
 
   socket.on('leave-room', () => {
@@ -640,16 +727,22 @@ io.on('connection', (socket) => {
 
     const readyCount = [...room.players.values()].filter((p) => p.isReady).length
     io.to(code).emit('player-ready-state', { roomCode: code, readyCount, playerCount: room.players.size })
+    broadcastRoomState(code)
 
-    const bothReady = room.players.size === 2 && readyCount === 2
-    if (!bothReady || room.match) return
+    // Check if all ready, 4 players, 2 per team
+    const team1Players = [...room.players.values()].filter(p => p.team === 1)
+    const team2Players = [...room.players.values()].filter(p => p.team === 2)
+    const allReady = team1Players.length === 2 && team2Players.length === 2 && [...room.players.values()].every(p => p.isReady)
+    if (!allReady || room.match) return
 
+    // Create match
     const playerEntries = [...room.players.entries()].sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))
     const descriptors = playerEntries.map(([id, p], index) => ({
       playerIndex: index + 1,
       socketId: id,
       heroId: p.setup.heroId,
       itemIds: p.setup.itemIds,
+      team: p.team,
     }))
     const matchState = createMatchFromPlayerDescriptors(code, descriptors)
     if (!matchState) {
@@ -669,8 +762,8 @@ io.on('connection', (socket) => {
     }
 
     const room = rooms.get(code)
-    if (room.players.size !== 2) {
-      socket.emit('room-error', { error: 'Need 2 players to play again' })
+    if (room.players.size < 2) {
+      socket.emit('room-error', { error: 'Need at least 2 players to play again' })
       return
     }
 

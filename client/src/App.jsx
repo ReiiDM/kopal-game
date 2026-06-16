@@ -103,6 +103,7 @@ function App() {
   const [battleEffects, setBattleEffects] = useState([]) // To show temporary effects on characters
   const [isSkillModalOpen, setIsSkillModalOpen] = useState(false) // To show skill detail modal
   const [showWinnerModal, setShowWinnerModal] = useState(false) // To control when winner modal appears
+  const [roomPlayers, setRoomPlayers] = useState([]) // For tracking players in room with team info
   // Load win/loss from localStorage
   const [wins, setWins] = useState(() => {
     const saved = localStorage.getItem('kopal-wins')
@@ -340,7 +341,13 @@ function App() {
       if (!payload?.roomCode) return
       setRoomCode(payload.roomCode)
       setPlayerCount(payload?.playerCount ?? 0)
-      setIsReady((payload?.playerCount ?? 0) === 2)
+      setRoomPlayers(payload?.players || [])
+      // Don't auto set isReady anymore, since we need 4 players with 2 per team
+    }
+
+    const handleSwitchTeam = () => {
+      if (!socket) return
+      socket.emit('switch-team')
     }
 
     function onRoomReady(payload) {
@@ -822,9 +829,10 @@ function App() {
     socket.emit('player-action', { kind: 'skill', skillIndex: index })
   }
 
-  function formatPlayerLabel(index) {
+  function formatPlayerLabel(index, team) {
     if (!index) return '—'
-    return index === 1 ? 'Player A' : 'Player B'
+    const teamLabel = team ? `(Team ${team}) ` : ''
+    return `${teamLabel}Player ${index}`
   }
 
   function getHpPct(p) {
@@ -866,7 +874,7 @@ function App() {
               <span className="ml-2 text-slate-400">({serverUrl})</span>
             </div>
             <div className="text-slate-300">
-              Room: {roomCode ? `${roomCode} (${playerCount}/2)` : '—'}
+              Room: {roomCode ? `${roomCode} (${playerCount}/4)` : '—'}
               {isReady ? ' • ready' : ''}
             </div>
             {!isConnected && socketError ? (
@@ -939,6 +947,47 @@ function App() {
                 {setupStep === 1 ? "Pick your hero!" : setupStep === 2 ? "Choose 3 items!" : ""}
               </p>
             </div>
+
+            {/* Team Display */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Team 1 */}
+              <div className="rounded-lg border border-red-800 bg-red-950/30 p-4">
+                <div className="text-sm font-semibold text-red-300 mb-2">🔴 Team 1 ({roomPlayers.filter(p => p.team === 1).length}/2)</div>
+                <div className="space-y-1">
+                  {roomPlayers.filter(p => p.team === 1).map(p => (
+                    <div key={p.socketId} className={`text-sm ${p.isReady ? 'text-emerald-300' : 'text-slate-400'}`}>
+                      {p.isReady ? '✅ Ready' : '⏳ Waiting...'} {p.socketId === socketId ? '(You)' : ''}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Team 2 */}
+              <div className="rounded-lg border border-blue-800 bg-blue-950/30 p-4">
+                <div className="text-sm font-semibold text-blue-300 mb-2">🔵 Team 2 ({roomPlayers.filter(p => p.team === 2).length}/2)</div>
+                <div className="space-y-1">
+                  {roomPlayers.filter(p => p.team === 2).map(p => (
+                    <div key={p.socketId} className={`text-sm ${p.isReady ? 'text-emerald-300' : 'text-slate-400'}`}>
+                      {p.isReady ? '✅ Ready' : '⏳ Waiting...'} {p.socketId === socketId ? '(You)' : ''}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Switch Team Button */}
+            {!hasSentReady ? (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white font-medium text-sm rounded-lg transition-all duration-300"
+                  onClick={handleSwitchTeam}
+                  disabled={!isConnected}
+                >
+                  🔄 Switch Team
+                </button>
+              </div>
+            ) : null}
 
             {/* Step 1: Hero Selection */}
             {setupStep === 1 && (
@@ -1184,7 +1233,7 @@ function App() {
                       disabled={!isConnected || hasSentReady || !selectedHero}
                     >
                       {hasSentReady ? (
-                        <>⏳ Waiting for opponent...</>
+                        <>⏳ Waiting for all players...</>
                       ) : (
                         <>🎉 I'm Ready!</>
                       )}
@@ -1203,11 +1252,11 @@ function App() {
                 <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="text-sm font-semibold">
-                      Turn {turnNumber} • {formatPlayerLabel(currentTurnPlayerIndex)}'s turn
+                      Turn {turnNumber} • {formatPlayerLabel(currentTurnPlayerIndex, (matchState.players || []).find(p => p.playerIndex === currentTurnPlayerIndex)?.team)}'s turn
                       {isMatchOver ? ' • match over' : ''}
                     </div>
                     <div className="text-xs text-slate-300">
-                      {myPlayerIndex ? `You are ${formatPlayerLabel(myPlayerIndex)}` : ''}
+                      {myPlayerIndex ? `You are ${formatPlayerLabel(myPlayerIndex, (matchState.players || []).find(p => p.playerIndex === myPlayerIndex)?.team)}` : ''}
                       {isMyTurn && !isMatchOver ? ' • your move' : ''}
                       {actionPending ? ' • resolving…' : ''}
                     </div>
@@ -1219,11 +1268,11 @@ function App() {
                   ) : null}
                 </div>
 
-                {/* Players in responsive layout (1 column mobile, 2 columns desktop) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {[myMatchPlayer, enemyMatchPlayer].map((p, idx) => {
+                {/* Players in responsive layout (1 column mobile, 4 columns desktop) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {(matchState.players || []).map((p) => {
                     if (!p) return null
-                    const isSelf = idx === 0
+                    const isSelf = p.socketId === socketId
                     const isCurrentTurn = (matchState.currentTurnPlayerIndex ?? matchState.activePlayerIndex) === p.playerIndex
                     const hpPct = getHpPct(p)
                     const shieldPct = getShieldPct(p)
@@ -1232,13 +1281,17 @@ function App() {
                     const placeholderImage = `https://picsum.photos/seed/${p.heroId}/200/200`
                     const playerEffects = battleEffects.filter(e => e.playerIndex === p.playerIndex)
                     
+                    const teamColor = p.team === 1 
+                      ? 'border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.2)]' 
+                      : 'border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.2)]'
+                    
                     return (
                       <div
                         key={p.playerIndex}
                         className={`relative rounded-lg border bg-slate-950/30 p-4 transition-all duration-300 ${
                           isCurrentTurn
-                            ? 'border-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.3)]'
-                            : 'border-slate-800'
+                            ? `${teamColor} ring-2 ring-indigo-500`
+                            : teamColor
                         }`}
                       >
                         {/* Item images in top left corner */}
