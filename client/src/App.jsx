@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { io } from 'socket.io-client'
 
 function App() {
@@ -118,6 +118,12 @@ function App() {
   const [ultimateSplash, setUltimateSplash] = useState(null)
   const [turnBanner, setTurnBanner] = useState(null)
   const [flashWhite, setFlashWhite] = useState(false)
+  
+  const bgmIntervalRef = useRef(null)
+  const bgmAudioCtxRef = useRef(null)
+  const [musicEnabled, setMusicEnabled] = useState(() => {
+    return localStorage.getItem('kopal-bgm') === 'true'
+  })
   // Load win/loss from localStorage
   const [wins, setWins] = useState(() => {
     const saved = localStorage.getItem('kopal-wins')
@@ -195,6 +201,21 @@ function App() {
       }
     } catch (e) {
       console.error('Sound error:', e)
+    }
+  }
+
+  const speakMeme = (text, rate = 1.0, pitch = 1.0) => {
+    try {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.lang = 'tl-PH'
+        utterance.rate = rate
+        utterance.pitch = pitch
+        window.speechSynthesis.speak(utterance)
+      }
+    } catch (e) {
+      console.error('Speech synthesis error:', e)
     }
   }
 
@@ -422,6 +443,9 @@ function App() {
               localStorage.setItem('kopal-wins', newWins.toString())
               return newWins
             })
+            setTimeout(() => {
+              speakMeme('panalo ako! ikaw, iyak na lang', 1.0, 1.1)
+            }, 800)
           } else {
             // Loss
             setLosses((prev) => {
@@ -429,6 +453,9 @@ function App() {
               localStorage.setItem('kopal-losses', newLosses.toString())
               return newLosses
             })
+            setTimeout(() => {
+              speakMeme('talo ka naman boy', 0.95, 0.9)
+            }, 800)
           }
         }
       }
@@ -523,6 +550,43 @@ function App() {
             playSound('skill')
           } else {
             playSound('attack')
+          }
+
+          // Play meme voiceover
+          if (entry.name) {
+            const nameMap = {
+              'Palo-Palo Lang': 'palo palo lang',
+              'Ayy Inday!': 'aray inday!',
+              'Tsismis Barrage': 'tsismis muna bago sapak',
+              'Laban Kung Laban': 'laban kung laban!',
+              'Inday Rage Mode': 'inday rage mode, activated!',
+              'Suntok na Makunat': 'suntok na makunat!',
+              'Balat na Makapal': 'makapal ang mukha, este balat',
+              'Pisngi Slam': 'sampal sa pisngi!',
+              'Self Love Muna': 'self love muna, huwag kang mang-gulo',
+              'Hindi Ako Tinatablan': 'hindi ako tinatablan!',
+              'Singit Hit': 'singit hit!',
+              'Banlag Strike': 'banlag strike! asan ka ba tumitingin?',
+              'Liko Liko': 'liko liko, iwas muna',
+              'Gulat Ka No?': 'gulat ka no?',
+              'Walang Makaka-Tama': 'walang makakatama sa akin!',
+              'Trip Lang': 'trip lang kitang bugbugin',
+              'Ay Beh!': 'ay beh!',
+              'Drama Mode': 'drama mode muna, iyak tawa',
+              'Biglang Bawi': 'biglang bawi, ibalik sa\'yo',
+              'Finale Performance': 'finale performance, bow!',
+              'Tamad na Suntok': 'suntok na tamad',
+              'Bahala Na, Basta Makatulog': 'bahala na, basta makatulog',
+              'Gym Tomorrow Na Lang': 'gym tomorrow na lang',
+              'Sige, Isang Bigay Pa!': 'sige, isang bigay pa, buhat pa!',
+              'Tara GYM!': 'tara gym! buhat tayo, tol!'
+            }
+            const speechText = nameMap[entry.name]
+            if (speechText) {
+              setTimeout(() => {
+                speakMeme(speechText, 1.05, 1.0)
+              }, 150)
+            }
           }
         }
         
@@ -919,6 +983,66 @@ function App() {
     setSelectedTarget(null)
   }, [currentTurnPlayerIndex])
 
+  // BGM Player
+  useEffect(() => {
+    if (!musicEnabled || page !== 'battle' || isMatchOver) {
+      if (bgmIntervalRef.current) {
+        clearInterval(bgmIntervalRef.current)
+        bgmIntervalRef.current = null
+      }
+      if (bgmAudioCtxRef.current) {
+        bgmAudioCtxRef.current.close()
+        bgmAudioCtxRef.current = null
+      }
+      return
+    }
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    bgmAudioCtxRef.current = audioCtx
+
+    // Simple 8-bit pentatonic bassline loop
+    const notes = [
+      110.00, 110.00, 130.81, 146.83, 
+      164.81, 164.81, 146.83, 130.81,
+      110.00, 110.00, 146.83, 164.81, 
+      196.00, 164.81, 146.83, 130.81
+    ]
+    let step = 0
+
+    const interval = setInterval(() => {
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume()
+      }
+      const freq = notes[step % notes.length]
+      
+      const osc = audioCtx.createOscillator()
+      const gainNode = audioCtx.createGain()
+      
+      osc.type = 'triangle'
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime)
+      
+      gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.33)
+      
+      osc.connect(gainNode)
+      gainNode.connect(audioCtx.destination)
+      
+      osc.start()
+      osc.stop(audioCtx.currentTime + 0.35)
+      
+      step++
+    }, 350)
+
+    bgmIntervalRef.current = interval
+
+    return () => {
+      clearInterval(interval)
+      if (bgmAudioCtxRef.current) {
+        bgmAudioCtxRef.current.close()
+      }
+    }
+  }, [musicEnabled, page, isMatchOver])
+
   function handleNormalAttack() {
     if (!socket || !matchState) return
     setActionPending(true)
@@ -964,6 +1088,21 @@ function App() {
           <div className="flex items-center justify-between gap-4">
             <h1 className="text-3xl font-semibold tracking-tight">Kopal Battlefield</h1>
             <div className="text-sm flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  const newVal = !musicEnabled
+                  setMusicEnabled(newVal)
+                  localStorage.setItem('kopal-bgm', newVal.toString())
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all ${
+                  musicEnabled 
+                    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' 
+                    : 'bg-slate-800/40 text-slate-400 border-slate-700/40 hover:bg-slate-800'
+                }`}
+              >
+                {musicEnabled ? '🎵 Music: On' : '🔇 Music: Off'}
+              </button>
               <span className="text-emerald-400 font-bold">🏆 {wins} Wins</span>
               <span className="text-slate-400 font-bold">💀 {losses} Losses</span>
             </div>
