@@ -703,7 +703,29 @@ function App() {
   }
 
   function handlePlayAgain() {
-    if (!socket) return
+    if (!socket || !roomCode) return
+    setActionPending(false)
+    setBattleLogs([])
+    setStatus('Starting rematch...')
+    socket.emit('play-again')
+  }
+
+  function handleGoToMainMenu() {
+    handleLeaveRoom()
+  }
+
+  function handleGoToCharacterSelection() {
+    if (!socket || !roomCode) return
+    // Reset to setup
+    setMatchState(null)
+    setActionPending(false)
+    setBattleLogs([])
+    setSelectedHeroId('')
+    setSelectedItemIds([])
+    setHasSentReady(false)
+    setSetupStep(1)
+    setStatus('Back to character selection!')
+    // Also reset server side (send play again)
     socket.emit('play-again')
   }
 
@@ -755,17 +777,10 @@ function App() {
   const myHeroDef = myMatchPlayer?.heroId ? heroes?.[myMatchPlayer.heroId] : null
 
   const isMatchOver = Boolean(matchState?.endedAt)
+  const isWinner = isMatchOver && matchState?.result?.winnerPlayerIndex === myPlayerIndex
   const turnNumber = matchState?.turnCount ?? matchState?.turn ?? 1
   const turnDamageBoostPct = turnNumber >= 8 ? 0.2 : turnNumber >= 6 ? 0.1 : 0
   const page = matchState ? 'battle' : roomCode ? 'setup' : 'lobby'
-
-  function handlePlayAgain() {
-    if (!socket || !roomCode) return
-    setActionPending(false)
-    setBattleLogs([])
-    setStatus('Starting rematch...')
-    socket.emit('play-again')
-  }
 
   function handleNormalAttack() {
     if (!socket || !matchState) return
@@ -1628,15 +1643,38 @@ function App() {
                   {matchState?.result?.reason ? ` • ${matchState.result.reason}` : ''}
                 </p>
                 
-                {/* Play Again Button */}
-                <button
-                  type="button"
-                  className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-slate-950 font-bold text-lg rounded-xl transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg shadow-yellow-500/30"
-                  onClick={handlePlayAgain}
-                  disabled={!isConnected}
-                >
-                  🔄 Play Again
-                </button>
+                {/* Options Buttons */}
+                <div className="grid gap-3">
+                  {/* Play Again Button */}
+                  <button
+                    type="button"
+                    className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-slate-950 font-bold text-lg rounded-xl transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg shadow-yellow-500/30"
+                    onClick={handlePlayAgain}
+                    disabled={!isConnected}
+                  >
+                    🔄 Play Again
+                  </button>
+
+                  {/* Character Selection Button */}
+                  <button
+                    type="button"
+                    className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 text-white font-bold text-lg rounded-xl transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg shadow-indigo-500/30"
+                    onClick={handleGoToCharacterSelection}
+                    disabled={!isConnected}
+                  >
+                    🎭 Character Selection
+                  </button>
+
+                  {/* Main Menu Button */}
+                  <button
+                    type="button"
+                    className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-white font-bold text-lg rounded-xl transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg"
+                    onClick={handleGoToMainMenu}
+                    disabled={!isConnected}
+                  >
+                    🏠 Main Menu
+                  </button>
+                </div>
               </div>
             </div>
           </div>
