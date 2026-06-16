@@ -14,6 +14,33 @@ const QUICK_TAUNTS = [
   'paki-buhat nga ako 🏋️'
 ]
 
+const ITEM_IMAGE_MAP = {
+  'tsinelas_ni_nanay': 'tsinelas.png',
+  'anting_anting': 'anting-anting.png',
+  'lucky_3_coins': 'lucky-3-coins.png',
+  'fishball_power': 'fishball.jpg',
+  'jacket_ni_kuya': 'jacket.jpg',
+  'old_nokia': 'nokia.jpg',
+  'chismis_notebook': 'tsismis.jpg',
+  'energy_drink': 'energy_drink.jpg',
+  'pamahiin_charm': 'pamahiin.jpg',
+  'final_blessing': 'blessing.jpg'
+}
+
+function getItemImageUrl(itemId) {
+  const filename = ITEM_IMAGE_MAP[itemId]
+  if (filename) {
+    return `/images/${filename}`
+  }
+  const itemImageSeed = itemId ? itemId.replace(/[^a-zA-Z0-9]/g, '') : 'item'
+  return `https://picsum.photos/seed/${itemImageSeed}/80/80`
+}
+
+function getHeroImageUrl(heroId) {
+  if (!heroId) return `https://picsum.photos/seed/unknown/200/200`
+  return `/images/${heroId}.jpg`
+}
+
 function App() {
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value))
@@ -131,6 +158,8 @@ function App() {
   const [ultimateSplash, setUltimateSplash] = useState(null)
   const [turnBanner, setTurnBanner] = useState(null)
   const [flashWhite, setFlashWhite] = useState(false)
+  const [countdown, setCountdown] = useState(null)
+  const [showBattleStartOverlay, setShowBattleStartOverlay] = useState(false)
   
   const bgmIntervalRef = useRef(null)
   const bgmAudioCtxRef = useRef(null)
@@ -250,6 +279,44 @@ function App() {
           gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25)
           oscillator.start(audioCtx.currentTime)
           oscillator.stop(audioCtx.currentTime + 0.25)
+          break
+        case 'tick':
+          oscillator.type = 'sine'
+          oscillator.frequency.setValueAtTime(880, audioCtx.currentTime)
+          oscillator.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.08)
+          gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1)
+          oscillator.start(audioCtx.currentTime)
+          oscillator.stop(audioCtx.currentTime + 0.1)
+          break
+        case 'battle-start':
+          // Dramatic arcade start chime: rapid arpeggio
+          const startNotes = [392, 523, 659, 784, 1047]
+          startNotes.forEach((freq, i) => {
+            const osc = audioCtx.createOscillator()
+            const gain = audioCtx.createGain()
+            osc.connect(gain)
+            gain.connect(audioCtx.destination)
+            osc.type = 'sawtooth'
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime + i * 0.06)
+            gain.gain.setValueAtTime(0.25, audioCtx.currentTime + i * 0.06)
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + i * 0.06 + 0.25)
+            osc.start(audioCtx.currentTime + i * 0.06)
+            osc.stop(audioCtx.currentTime + i * 0.06 + 0.25)
+          })
+
+          // Explosion sub-bass
+          const subOsc = audioCtx.createOscillator()
+          const subGain = audioCtx.createGain()
+          subOsc.connect(subGain)
+          subGain.connect(audioCtx.destination)
+          subOsc.type = 'triangle'
+          subOsc.frequency.setValueAtTime(120, audioCtx.currentTime + 0.3)
+          subOsc.frequency.linearRampToValueAtTime(30, audioCtx.currentTime + 0.8)
+          subGain.gain.setValueAtTime(0.4, audioCtx.currentTime + 0.3)
+          subGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8)
+          subOsc.start(audioCtx.currentTime + 0.3)
+          subOsc.stop(audioCtx.currentTime + 0.8)
           break
       }
     } catch (e) {
@@ -510,12 +577,32 @@ function App() {
       setStatus('Ready to play again!')
     }
 
+    function onMatchStarting(payload) {
+      setCountdown(payload?.countdown ?? 3)
+      setStatus(`Battle starting in ${payload?.countdown ?? 3}...`)
+      playSound('tick')
+    }
+
+    function onMatchStartCancelled() {
+      setCountdown(null)
+      setHasSentReady(false)
+      setStatus('Match start cancelled.')
+    }
+
     function onMatchStarted(payload) {
+      setCountdown(null)
       setMatchState(payload || null)
       setActionPending(false)
       setBattleLogs([])
       setShowWinnerModal(false)
       setStatus('Match started.')
+
+      // Trigger stunning battle start overlay
+      setShowBattleStartOverlay(true)
+      playSound('battle-start')
+      setTimeout(() => {
+        setShowBattleStartOverlay(false)
+      }, 2500)
     }
 
     function onMatchUpdated(payload) {
@@ -931,6 +1018,8 @@ function App() {
     socket.on('player-ready-state', onPlayerReadyState)
     socket.on('receive-taunt', onReceiveTaunt)
     socket.on('player-ready-cancelled', onPlayerReadyCancelled)
+    socket.on('match-starting', onMatchStarting)
+    socket.on('match-start-cancelled', onMatchStartCancelled)
 
     return () => {
       isActive = false
@@ -952,6 +1041,8 @@ function App() {
       socket.off('player-ready-state', onPlayerReadyState)
       socket.off('receive-taunt', onReceiveTaunt)
       socket.off('player-ready-cancelled', onPlayerReadyCancelled)
+      socket.off('match-starting', onMatchStarting)
+      socket.off('match-start-cancelled', onMatchStartCancelled)
     }
   }, [socket, serverCandidates, serverIndex])
 
@@ -1574,30 +1665,7 @@ function App() {
                       const checked = selectedItemIds.includes(it.id)
                       const disabled = hasSentReady || (!checked && selectedItemIds.length >= 3)
                       
-                      // Map item IDs to their image filenames
-                      const getItemImage = (itemId) => {
-                        const imageMap = {
-                          'tsinelas_ni_nanay': 'tsinelas.png',
-                          'anting_anting': 'anting-anting.png',
-                          'lucky_3_coins': 'lucky-3-coins.png',
-                          'fishball_power': 'fishball.jpg',
-                          'jacket_ni_kuya': 'jacket.jpg',
-                          'old_nokia': 'nokia.jpg',
-                          'chismis_notebook': 'tsismis.jpg',
-                          'energy_drink': 'energy_drink.jpg',
-                          'pamahiin_charm': 'pamahiin.jpg',
-                          'final_blessing': 'blessing.jpg'
-                        }
-                        const filename = imageMap[itemId]
-                        if (filename) {
-                          return `/images/${filename}`
-                        }
-                        // Fallback to placeholder
-                        const itemImageSeed = itemId.replace(/[^a-zA-Z0-9]/g, '')
-                        return `https://picsum.photos/seed/${itemImageSeed}/80/80`
-                      }
-                      
-                      const itemImage = getItemImage(it.id)
+                      const itemImage = getItemImageUrl(it.id)
                       
                       return (
                         <label
@@ -1762,38 +1830,15 @@ function App() {
                         )}
                         {/* Item images in top left corner */}
                         <div className="absolute top-2 left-2 flex gap-1 flex-wrap max-w-24 z-10">
-                          {Array.isArray(p.itemIds) && p.itemIds.map((itemId) => {
-                            const getItemImage = (itemId) => {
-                              const imageMap = {
-                                'tsinelas_ni_nanay': 'tsinelas.png',
-                                'anting_anting': 'anting-anting.png',
-                                'lucky_3_coins': 'lucky-3-coins.png',
-                                'fishball_power': 'fishball.jpg',
-                                'jacket_ni_kuya': 'jacket.jpg',
-                                'old_nokia': 'nokia.jpg',
-                                'chismis_notebook': 'tsismis.jpg',
-                                'energy_drink': 'energy_drink.jpg',
-                                'pamahiin_charm': 'pamahiin.jpg',
-                                'final_blessing': 'blessing.jpg'
-                              }
-                              const filename = imageMap[itemId]
-                              if (filename) {
-                                return `/images/${filename}`
-                              }
-                              const itemImageSeed = itemId.replace(/[^a-zA-Z0-9]/g, '')
-                              return `https://picsum.photos/seed/${itemImageSeed}/32/32`
-                            }
-                            
-                            return (
-                              <div key={itemId} className="w-6 h-6 rounded border border-slate-700 overflow-hidden bg-slate-800 flex items-center justify-center">
-                                <img 
-                                  src={getItemImage(itemId)}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                />
-                              </div>
-                            )
-                          })}
+                          {Array.isArray(p.itemIds) && p.itemIds.map((itemId) => (
+                            <div key={itemId} className="w-6 h-6 rounded border border-slate-700 overflow-hidden bg-slate-800 flex items-center justify-center">
+                              <img 
+                                src={getItemImageUrl(itemId)}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          ))}
                         </div>
                         
                         {/* Hero Image with stun overlay OUTSIDE overflow-hidden */}
@@ -2395,6 +2440,249 @@ function App() {
               </h2>
               <div className="mt-4 px-3 py-1 bg-yellow-400/20 text-yellow-300 border border-yellow-500/40 rounded-full text-xs font-semibold tracking-wider animate-pulse uppercase">
                 ⭐ Ultimate Skill ⭐
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Pre-battle starting countdown screen */}
+        {countdown !== null && (
+          <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-xl p-4 md:p-8 overflow-y-auto">
+            {/* Ambient Background Glows */}
+            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-red-600/10 rounded-full blur-3xl pointer-events-none animate-pulse animate-infinite" />
+            <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none animate-pulse animate-infinite" />
+            
+            <div className="w-full max-w-5xl flex flex-col gap-6 md:gap-8 relative z-10">
+              {/* Header */}
+              <div className="text-center">
+                <div className="inline-block px-4 py-1.5 bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-bold uppercase tracking-widest rounded-full animate-pulse">
+                  ⚔️ GET READY FOR THE MATCH ⚔️
+                </div>
+                <h2 className="text-2xl md:text-3xl font-black text-white uppercase tracking-tight mt-2">
+                  Match is Starting!
+                </h2>
+              </div>
+
+              {/* VS Panel */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                {/* Team 1 (Left) */}
+                <div className="md:col-span-5 bg-gradient-to-br from-red-950/40 to-slate-900/50 border border-red-500/30 rounded-2xl p-6 shadow-2xl backdrop-blur-md animate-vs-slide-left">
+                  <h3 className="text-rose-400 text-center font-black tracking-wider uppercase mb-4 text-lg border-b border-rose-500/20 pb-2">
+                    🔴 TEAM A
+                  </h3>
+                  <div className="flex flex-col gap-4 justify-center">
+                    {roomPlayers.filter(p => p.team === 1).map((p, idx) => {
+                      const hero = heroes[p.heroId]
+                      return (
+                        <div key={p.socketId || idx} className="flex items-center gap-4 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
+                          <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-rose-500 bg-slate-800 flex-shrink-0">
+                            <img 
+                              src={getHeroImageUrl(p.heroId)} 
+                              alt="" 
+                              className="w-full h-full object-cover"
+                              onError={(e) => { e.target.src = `https://picsum.photos/seed/${p.heroId || 'tan'}/200/200` }}
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-black text-white truncate text-base">
+                              {hero?.name || 'Selecting...'}
+                            </div>
+                            <div className="text-xs text-slate-400 capitalize">
+                              {hero?.role || 'Hero'}
+                            </div>
+                            {/* Selected Items */}
+                            <div className="flex gap-1.5 mt-1">
+                              {Array.isArray(p.itemIds) && p.itemIds.map((itemId, i) => (
+                                <div key={i} className="w-5 h-5 rounded border border-slate-700 overflow-hidden bg-slate-900" title={itemId}>
+                                  <img src={getItemImageUrl(itemId)} alt="" className="w-full h-full object-cover" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {roomPlayers.filter(p => p.team === 1).length === 0 && (
+                      <div className="text-center py-6 text-sm text-slate-500 italic">No players on Team A</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* VS & Timer (Center) */}
+                <div className="md:col-span-2 flex flex-col items-center justify-center py-4 relative">
+                  {/* Glowing VS Circle */}
+                  <div className="relative w-28 h-28 md:w-32 md:h-32 flex items-center justify-center rounded-full bg-slate-900 border border-slate-800 shadow-2xl">
+                    <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-ping" />
+                    <div className="absolute inset-2 rounded-full border border-yellow-500/30 animate-pulse" />
+                    
+                    {/* Pulsing countdown number */}
+                    <div key={countdown} className="text-7xl md:text-8xl font-black text-yellow-400 font-mono animate-countdown-tick drop-shadow-[0_0_15px_rgba(234,179,8,0.7)] select-none">
+                      {countdown}
+                    </div>
+                  </div>
+                  <div className="mt-4 text-xs font-semibold text-yellow-500 uppercase tracking-widest text-center animate-pulse">
+                    ⚡ Humanda sa Bakbakan! ⚡
+                  </div>
+                </div>
+
+                {/* Team 2 (Right) */}
+                <div className="md:col-span-5 bg-gradient-to-br from-blue-950/40 to-slate-900/50 border border-blue-500/30 rounded-2xl p-6 shadow-2xl backdrop-blur-md animate-vs-slide-right">
+                  <h3 className="text-blue-400 text-center font-black tracking-wider uppercase mb-4 text-lg border-b border-blue-500/20 pb-2">
+                    🔵 TEAM B
+                  </h3>
+                  <div className="flex flex-col gap-4 justify-center">
+                    {roomPlayers.filter(p => p.team === 2).map((p, idx) => {
+                      const hero = heroes[p.heroId]
+                      return (
+                        <div key={p.socketId || idx} className="flex items-center gap-4 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
+                          <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-blue-500 bg-slate-800 flex-shrink-0">
+                            <img 
+                              src={getHeroImageUrl(p.heroId)} 
+                              alt="" 
+                              className="w-full h-full object-cover"
+                              onError={(e) => { e.target.src = `https://picsum.photos/seed/${p.heroId || 'tan'}/200/200` }}
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-black text-white truncate text-base">
+                              {hero?.name || 'Selecting...'}
+                            </div>
+                            <div className="text-xs text-slate-400 capitalize">
+                              {hero?.role || 'Hero'}
+                            </div>
+                            {/* Selected Items */}
+                            <div className="flex gap-1.5 mt-1">
+                              {Array.isArray(p.itemIds) && p.itemIds.map((itemId, i) => (
+                                <div key={i} className="w-5 h-5 rounded border border-slate-700 overflow-hidden bg-slate-900" title={itemId}>
+                                  <img src={getItemImageUrl(itemId)} alt="" className="w-full h-full object-cover" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {roomPlayers.filter(p => p.team === 2).length === 0 && (
+                      <div className="text-center py-6 text-sm text-slate-500 italic">No players on Team B</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Cancel Button */}
+              <div className="flex justify-center mt-4">
+                <button
+                  type="button"
+                  onClick={handleCancelReady}
+                  className="px-10 py-4 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-black text-lg rounded-2xl transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-xl shadow-rose-600/30 border border-rose-500/30 flex items-center gap-2 group"
+                >
+                  <span className="group-hover:rotate-90 transition-transform duration-300">❌</span> CANCEL MATCH
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Stunning BATTLE START Overlay */}
+        {showBattleStartOverlay && (
+          <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/95 overflow-hidden">
+            {/* Fullscreen fast white flash overlay */}
+            <div className="absolute inset-0 bg-white z-50 animate-flash-white pointer-events-none" />
+
+            {/* Split panels background */}
+            <div className="absolute inset-0 flex flex-col md:flex-row pointer-events-none">
+              {/* Left Side Red Panel */}
+              <div className="flex-1 bg-gradient-to-r from-red-950/80 via-red-900/60 to-transparent border-r border-red-500/20 animate-vs-slide-left" />
+              {/* Right Side Blue Panel */}
+              <div className="flex-1 bg-gradient-to-l from-blue-950/80 via-blue-900/60 to-transparent border-l border-blue-500/20 animate-vs-slide-right" />
+            </div>
+
+            {/* Content Container */}
+            <div className="relative w-full max-w-6xl px-4 flex flex-col items-center z-20">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-8 w-full items-center">
+                {/* Team 1 Heroes (Left) */}
+                <div className="md:col-span-5 flex flex-col gap-6 items-end md:pr-12 animate-vs-slide-left">
+                  {(matchState?.players || []).filter(p => p.team === 1).map((p, idx) => (
+                    <div key={p.playerIndex || idx} className="flex items-center gap-4 bg-gradient-to-l from-red-900/30 to-black/60 p-4 rounded-2xl border border-red-500/30 shadow-2xl w-full max-w-sm">
+                      <div className="flex-1 text-right min-w-0">
+                        <div className="text-rose-400 font-extrabold text-xs tracking-wider uppercase">TEAM A</div>
+                        <h4 className="font-black text-2xl text-white truncate italic uppercase tracking-tighter">
+                          {p.heroName || 'Hero'}
+                        </h4>
+                        <div className="flex gap-1 justify-end mt-2">
+                          {Array.isArray(p.itemIds) && p.itemIds.map((itemId, i) => (
+                            <div key={i} className="w-5 h-5 rounded border border-slate-700 overflow-hidden bg-slate-900" title={itemId}>
+                              <img src={getItemImageUrl(itemId)} alt="" className="w-full h-full object-cover" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 border-red-500 shadow-lg shadow-red-500/20 bg-slate-800 flex-shrink-0 transform rotate-3">
+                        <img 
+                          src={getHeroImageUrl(p.heroId)} 
+                          alt="" 
+                          className="w-full h-full object-cover scale-110" 
+                          onError={(e) => { e.target.src = `https://picsum.photos/seed/${p.heroId || 'tan'}/200/200` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* VS Slam Badge (Center) */}
+                <div className="md:col-span-2 flex flex-col items-center justify-center animate-vs-badge-slam py-4">
+                  <div className="relative w-24 h-24 md:w-28 md:h-28 flex items-center justify-center rounded-full bg-gradient-to-b from-yellow-300 to-amber-500 border-4 border-white shadow-[0_0_30px_rgba(234,179,8,0.6)]">
+                    <span className="text-4xl md:text-5xl font-black text-slate-950 italic tracking-tighter animate-pulse">VS</span>
+                    <div className="absolute inset-0 rounded-full border border-yellow-300 animate-ping opacity-30" />
+                  </div>
+                </div>
+
+                {/* Team 2 Heroes (Right) */}
+                <div className="md:col-span-5 flex flex-col gap-6 items-start md:pl-12 animate-vs-slide-right">
+                  {(matchState?.players || []).filter(p => p.team === 2).map((p, idx) => (
+                    <div key={p.playerIndex || idx} className="flex items-center gap-4 bg-gradient-to-r from-blue-900/30 to-black/60 p-4 rounded-2xl border border-blue-500/30 shadow-2xl w-full max-w-sm">
+                      <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 border-blue-500 shadow-lg shadow-blue-500/20 bg-slate-800 flex-shrink-0 transform -rotate-3">
+                        <img 
+                          src={getHeroImageUrl(p.heroId)} 
+                          alt="" 
+                          className="w-full h-full object-cover scale-110"
+                          onError={(e) => { e.target.src = `https://picsum.photos/seed/${p.heroId || 'tan'}/200/200` }}
+                        />
+                      </div>
+                      <div className="flex-1 text-left min-w-0">
+                        <div className="text-blue-400 font-extrabold text-xs tracking-wider uppercase">TEAM B</div>
+                        <h4 className="font-black text-2xl text-white truncate italic uppercase tracking-tighter">
+                          {p.heroName || 'Hero'}
+                        </h4>
+                        <div className="flex gap-1 justify-start mt-2">
+                          {Array.isArray(p.itemIds) && p.itemIds.map((itemId, i) => (
+                            <div key={i} className="w-5 h-5 rounded border border-slate-700 overflow-hidden bg-slate-900" title={itemId}>
+                              <img src={getItemImageUrl(itemId)} alt="" className="w-full h-full object-cover" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* BATTLE START Text Impact Banner */}
+              <div className="mt-16 text-center animate-battle-start-impact relative">
+                <div className="absolute inset-0 bg-yellow-500/30 rounded-full blur-3xl scale-125 pointer-events-none" />
+                <div className="relative">
+                  <div className="text-yellow-400 font-black tracking-widest text-lg md:text-xl uppercase mb-3 drop-shadow animate-bounce">
+                    ⚡ ROUND 1 ⚡
+                  </div>
+                  <h1 className="text-6xl md:text-8xl font-black text-white italic tracking-tighter uppercase leading-none drop-shadow-[0_8px_25px_rgba(234,179,8,0.5)]" style={{
+                    textShadow: '0 0 30px rgba(234,179,8,0.9), 0 0 60px rgba(245,158,11,0.5), 0 0 100px rgba(245,158,11,0.3)'
+                  }}>
+                    BATTLE START!
+                  </h1>
+                  <p className="mt-4 text-sm md:text-base font-extrabold text-yellow-300 uppercase tracking-widest animate-pulse">
+                    ⚔️ Walang Atrasan! Bakbakan Na! ⚔️
+                  </p>
+                </div>
               </div>
             </div>
           </div>

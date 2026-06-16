@@ -73,6 +73,8 @@ function broadcastRoomState(roomCode) {
     socketId: id,
     team: p.team,
     isReady: p.isReady,
+    heroId: p.setup?.heroId || '',
+    itemIds: p.setup?.itemIds || [],
   }))
   io.to(roomCode).emit('room-state', {
     roomCode,
@@ -635,6 +637,13 @@ function leaveCurrentRoom(socket) {
   }
   socket.data.roomCode = undefined
 
+  // Clear start timer if active
+  if (room.startTimer) {
+    clearInterval(room.startTimer)
+    room.startTimer = null
+    io.to(code).emit('match-start-cancelled')
+  }
+
   socket.to(code).emit('player-left', { roomCode: code })
   broadcastRoomState(code)
 
@@ -841,25 +850,39 @@ io.on('connection', (socket) => {
     const is1v1Ready = team1Players.length === 1 && team2Players.length === 1 && allPlayersReady
     const is2v2Ready = team1Players.length === 2 && team2Players.length === 2 && allPlayersReady
     const allReady = is1v1Ready || is2v2Ready
-    if (!allReady || room.match) return
+    if (!allReady || room.match || room.startTimer) return
 
-    // Create match
-    const playerEntries = [...room.players.entries()].sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))
-    const descriptors = playerEntries.map(([id, p], index) => ({
-      playerIndex: index + 1,
-      socketId: id,
-      heroId: p.setup.heroId,
-      itemIds: p.setup.itemIds,
-      team: p.team,
-    }))
-    const matchState = createMatchFromPlayerDescriptors(code, descriptors)
-    if (!matchState) {
-      socket.emit('room-error', { error: 'Failed to start match' })
-      return
-    }
+    // Trigger match start countdown
+    io.to(code).emit('match-starting', { countdown: 3 })
 
-    room.match = matchState
-    io.to(code).emit('match-started', matchState)
+    let countdownCount = 3
+    room.startTimer = setInterval(() => {
+      countdownCount -= 1
+      if (countdownCount > 0) {
+        io.to(code).emit('match-starting', { countdown: countdownCount })
+      } else {
+        clearInterval(room.startTimer)
+        room.startTimer = null
+
+        // Create match
+        const playerEntries = [...room.players.entries()].sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))
+        const descriptors = playerEntries.map(([id, p], index) => ({
+          playerIndex: index + 1,
+          socketId: id,
+          heroId: p.setup.heroId,
+          itemIds: p.setup.itemIds,
+          team: p.team,
+        }))
+        const matchState = createMatchFromPlayerDescriptors(code, descriptors)
+        if (!matchState) {
+          io.to(code).emit('room-error', { error: 'Failed to start match' })
+          return
+        }
+
+        room.match = matchState
+        io.to(code).emit('match-started', matchState)
+      }
+    }, 1000)
   })
 
   socket.on('cancel-ready', () => {
@@ -873,6 +896,13 @@ io.on('connection', (socket) => {
     if (room.match) {
       socket.emit('room-error', { error: 'Cannot cancel ready after match has started' })
       return
+    }
+
+    // Clear start timer if active
+    if (room.startTimer) {
+      clearInterval(room.startTimer)
+      room.startTimer = null
+      io.to(code).emit('match-start-cancelled')
     }
 
     const player = room.players.get(socket.id)
