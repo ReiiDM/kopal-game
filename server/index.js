@@ -782,23 +782,38 @@ io.on('connection', (socket) => {
     }
 
     const room = rooms.get(code)
-    if (room.players.size < 2) {
-      socket.emit('room-error', { error: 'Need at least 2 players to play again' })
+    if (!room.match || !room.match.endedAt) {
+      socket.emit('room-error', { error: 'No completed match to restart' })
       return
     }
 
-    // Reset match and all players' ready states
-    room.match = null
-    for (const [id, player] of room.players.entries()) {
-      room.players.set(id, {
-        ...player,
-        isReady: false,
-        readyAt: undefined,
-      })
+    // Check for valid teams (same as before)
+    const team1Players = [...room.players.values()].filter(p => p.team === 1)
+    const team2Players = [...room.players.values()].filter(p => p.team === 2)
+    const is1v1Valid = team1Players.length === 1 && team2Players.length === 1
+    const is2v2Valid = team1Players.length === 2 && team2Players.length === 2
+    if (!is1v1Valid && !is2v2Valid) {
+      socket.emit('room-error', { error: 'Need valid teams to play again' })
+      return
     }
 
-    // Notify all players in the room to go back to setup
-    io.to(code).emit('play-again-init')
+    // Create new match with same setup
+    const playerEntries = [...room.players.entries()].sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))
+    const descriptors = playerEntries.map(([id, p], index) => ({
+      playerIndex: index + 1,
+      socketId: id,
+      heroId: p.setup.heroId,
+      itemIds: p.setup.itemIds,
+      team: p.team,
+    }))
+    const matchState = createMatchFromPlayerDescriptors(code, descriptors)
+    if (!matchState) {
+      socket.emit('room-error', { error: 'Failed to start match' })
+      return
+    }
+
+    room.match = matchState
+    io.to(code).emit('match-started', matchState)
   })
 
   socket.on('player-action', ({ kind, skillIndex, targetPlayerIndex } = {}) => {
