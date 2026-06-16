@@ -1,0 +1,16 @@
+{
+  "name": "kopal",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "kill:server-port": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$port=3010; $conn=Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -eq $port } | Select-Object -First 1; if(-not $conn){ exit 0 }; $procId=$conn.OwningProcess; $p=Get-Process -Id $procId -ErrorAction SilentlyContinue; if(-not $p){ exit 0 }; if($p.ProcessName -match 'node'){ Stop-Process -Id $procId -Force; exit 0 } else { Write-Output \\\"Port $port is in use by $($p.ProcessName) (PID $procId). Stop it or change PORT.\\\"; exit 1 }\"",
+    "dev": "npm run kill:server-port && concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "dev:server": "npm run kill:server-port && npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "start": "npm --prefix server run start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

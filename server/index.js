@@ -1,0 +1,1394 @@
+import express from 'express'
+import cors from 'cors'
+import { createServer } from 'http'
+import { Server } from 'socket.io'
+import { GLOBAL_ITEMS, HEROES } from './gameData.js'
+
+const app = express()
+const server = createServer(app)
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true
+  // Allow any origin for production
+  return true
+}
+
+const io = new Server(server, {
+  cors: {
+    origin: (origin, cb) => cb(null, isAllowedOrigin(origin)),
+    methods: ['GET', 'POST'],
+  },
+})
+
+const PORT = process.env.PORT || 3010
+const rooms = new Map()
+const playerStats = new Map() // { socketId: { wins: 0, losses: 0, winStreak: 0, bestWinStreak: 0 } }
+const ROOM_TTL_MS = 10 * 60 * 1000
+const ITEMS_BY_ID = new Map(GLOBAL_ITEMS.map((it) => [it.id, it]))
+
+setInterval(() => {
+  const now = Date.now()
+  for (const [code, room] of rooms.entries()) {
+    if (room.players.size > 0) continue
+    if (now - room.createdAt > ROOM_TTL_MS) {
+      rooms.delete(code)
+    }
+  }
+}, 60 * 1000)
+
+app.use(cors({ origin: (origin, cb) => cb(null, isAllowedOrigin(origin)) }))
+app.use(express.json())
+
+// Serve client static files
+import path from 'path'
+import { fileURLToPath } from 'url'
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const clientDistPath = path.join(__dirname, '../client/dist')
+app.use(express.static(clientDistPath))
+
+function generateRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let code = ''
+  for (let i = 0; i < 6; i += 1) {
+    code += chars[Math.floor(Math.random() * chars.length)]
+  }
+  return code
+}
+
+function createRoomRecord() {
+  return { players: new Map(), match: null, createdAt: Date.now() }
+}
+
+function getMemberCount(roomCode) {
+  const room = rooms.get(roomCode)
+  return room ? room.players.size : 0
+}
+
+function broadcastRoomState(roomCode) {
+  io.to(roomCode).emit('room-state', {
+    roomCode,
+    playerCount: getMemberCount(roomCode),
+    maxPlayers: 2,
+  })
+}
+
+function ensureUniqueRoomCode() {
+  let roomCode = generateRoomCode()
+  while (rooms.has(roomCode)) {
+    roomCode = generateRoomCode()
+  }
+  return roomCode
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function getOpponentIndex(playerIndex) {
+  return playerIndex === 1 ? 2 : 1
+}
+
+function getPlayerByIndex(match, playerIndex) {
+  return match?.players?.find((p) => p?.playerIndex === playerIndex) || null
+}
+
+function getHeroDefinition(heroId) {
+  const key = heroId?.toString().trim().toLowerCase()
+  return key ? HEROES[key] : null
+}
+
+function getPlayerIndexFromMatch(match, socketId) {
+  if (!match || !Array.isArray(match.players)) return null
+  const entry = match.players.find((p) => p?.socketId === socketId)
+  return entry?.playerIndex ?? null
+}
+
+function applyHeal(player, amount) {
+  const heal = Math.max(0, Math.floor(amount || 0))
+  if (!heal) return { player, healed: 0 }
+  const next = { ...player }
+  const maxHp = Math.max(1, next.baseHP || 1)
+  next.hp = clamp((next.hp || 0) + heal, 0, maxHp)
+  return { player: next, healed: heal }
+}
+
+function getTurnCount(match) {
+  return Math.max(1, Math.floor(match?.turnCount ?? match?.turn ?? 1))
+}
+
+function getTurnDamageMultiplier(match) {
+  const turn = getTurnCount(match)
+  if (turn >= 8) return 1.2
+  if (turn >= 6) return 1.1
+  return 1
+}
+
+function getActiveModifier(mod) {
+  if (!mod || typeof mod !== 'object') return null
+  const pct = typeof mod.pct === 'number' ? mod.pct : 0
+  const turns = typeof mod.turns === 'number' ? mod.turns : 0
+  if (turns <= 0 || pct === 0) return null
+  return { pct, turns }
+}
+
+function getItemIdSet(player) {
+  const ids = Array.isArray(player?.itemIds) ? player.itemIds : []
+  return new Set(ids.map((v) => v?.toString()).filter(Boolean))
+}
+
+function getItemMods(player) {
+  const ids = getItemIdSet(player)
+  return {
+    attackUpPct: ids.has('tsinelas_ni_nanay') ? 0.1 : 0,
+    defenseUpPct: ids.has('anting_anting') ? 0.1 : 0,
+    critChance: ids.has('lucky_3_coins') ? 0.15 : 0,
+    critDamagePct: ids.has('lucky_3_coins') ? 0.35 : 0,
+    healPerTurn: ids.has('fishball_power') ? 5 : 0,
+    reduceRandomCooldownBy: ids.has('energy_drink') ? 1 : 0,
+    flatDamageReduction: ids.has('jacket_ni_kuya') ? 2 : 0,
+    stunChanceOnDamage: ids.has('old_nokia') ? 0.1 : 0,
+    debuffMultiplier: ids.has('chismis_notebook') ? 1.25 : 1,
+    randomBuffEachTurn: ids.has('pamahiin_charm'),
+    ultimateDamageBonusPct: ids.has('final_blessing') ? 0.2 : 0,
+  }
+}
+
+function applyTurnStartItems(player, events) {
+  const mods = getItemMods(player)
+
+  if (mods.healPerTurn > 0) {
+    const healed = applyHeal(player, mods.healPerTurn)
+    Object.assign(player, healed.player)
+    if (healed.healed > 0) events.push({ kind: 'item-heal', itemId: 'fishball_power', amount: healed.healed, playerIndex: player.playerIndex })
+  }
+
+  if (mods.reduceRandomCooldownBy > 0) {
+    const cd = Array.isArray(player.cooldowns) ? player.cooldowns : [0, 0, 0, 0]
+    const indices = cd.map((v, i) => ({ v: Math.max(0, Math.floor(v || 0)), i })).filter((x) => x.v > 0)
+    if (indices.length) {
+      const pick = indices[Math.floor(Math.random() * indices.length)]
+      cd[pick.i] = Math.max(0, cd[pick.i] - mods.reduceRandomCooldownBy)
+      player.cooldowns = cd
+      events.push({ kind: 'item-cooldown-reduce', itemId: 'energy_drink', slot: pick.i + 1, amount: mods.reduceRandomCooldownBy, playerIndex: player.playerIndex })
+    }
+  }
+
+  if (mods.randomBuffEachTurn) {
+    const roll = Math.floor(Math.random() * 4)
+    if (roll === 0) {
+      const healed = applyHeal(player, 6)
+      Object.assign(player, healed.player)
+      events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'heal', amount: healed.healed, playerIndex: player.playerIndex })
+    } else if (roll === 1) {
+      player.effects = player.effects && typeof player.effects === 'object' ? player.effects : {}
+      player.effects.attack = { pct: 0.1, turns: 1 }
+      events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'attack', pct: 0.1, turns: 1, playerIndex: player.playerIndex })
+    } else if (roll === 2) {
+      player.effects = player.effects && typeof player.effects === 'object' ? player.effects : {}
+      player.effects.damageReduction = { pct: 0.1, turns: 1 }
+      events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'defense', pct: 0.1, turns: 1, playerIndex: player.playerIndex })
+    } else {
+      player.effects = player.effects && typeof player.effects === 'object' ? player.effects : {}
+      player.effects.evasion = { pct: 0.1, turns: 1 }
+      events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'evasion', pct: 0.1, turns: 1, playerIndex: player.playerIndex })
+    }
+  }
+}
+
+function applyDamage(match, attackerIndex, targetIndex, rawAmount, context = {}) {
+  const attacker = getPlayerByIndex(match, attackerIndex)
+  const target = getPlayerByIndex(match, targetIndex)
+  if (!attacker || !target) return { match, dealt: 0, evaded: false, reflected: 0, countered: 0, itemStunApplied: false, crit: false }
+
+  const attackMod = getActiveModifier(attacker?.effects?.attack)
+  const attackMultiplier = attackMod ? Math.max(0.1, 1 + attackMod.pct) : 1
+  const attackerItemMods = getItemMods(attacker)
+  const itemAttackMultiplier = 1 + attackerItemMods.attackUpPct
+  const turnDamageMultiplier = getTurnDamageMultiplier(match)
+
+  const ultimateBonus = context?.isUltimate ? attackerItemMods.ultimateDamageBonusPct : 0
+  const ultimateMultiplier = 1 + ultimateBonus
+
+  const critRoll = attackerItemMods.critChance > 0 && Math.random() < attackerItemMods.critChance
+  const critMultiplier = critRoll ? 1 + attackerItemMods.critDamagePct : 1
+
+  const modifiedAmount = Math.max(
+    0,
+    Math.floor((rawAmount || 0) * attackMultiplier * itemAttackMultiplier * ultimateMultiplier * critMultiplier * turnDamageMultiplier)
+  )
+  const amount = Math.max(0, Math.floor(modifiedAmount || 0))
+  if (!amount) return { match, dealt: 0, evaded: false, reflected: 0, countered: 0, itemStunApplied: false, crit: critRoll }
+
+  const immunityTurns = Math.max(0, Math.floor(target?.effects?.immunityTurns || 0))
+  if (immunityTurns > 0) {
+    return { match, dealt: 0, evaded: true, reflected: 0, countered: 0, itemStunApplied: false, crit: critRoll }
+  }
+
+  const targetEvasion = getActiveModifier(target?.effects?.evasion)
+  const dodgeAllTurns = Math.max(0, Math.floor(target?.effects?.dodgeAllTurns || 0))
+  if (dodgeAllTurns > 0) {
+    return { match, dealt: 0, evaded: true, reflected: 0, countered: 0, itemStunApplied: false, crit: critRoll }
+  }
+
+  if (targetEvasion && Math.random() < targetEvasion.pct) {
+    const nextMatch = { ...match, players: match.players.map((p) => ({ ...p })) }
+    const nextTarget = getPlayerByIndex(nextMatch, targetIndex)
+    nextTarget.effects = { ...(nextTarget.effects || {}), evasion: { ...nextTarget.effects.evasion, turns: 0 } }
+    return { match: nextMatch, dealt: 0, evaded: true, reflected: 0, countered: 0, itemStunApplied: false, crit: critRoll }
+  }
+
+  const damageReduction = getActiveModifier(target?.effects?.damageReduction)
+  const vulnerability = getActiveModifier(target?.effects?.vulnerability)
+  const targetItemMods = getItemMods(target)
+
+  const increased = vulnerability ? amount * (1 + vulnerability.pct) : amount
+  const reducedA = damageReduction ? increased * (1 - damageReduction.pct) : increased
+  const reducedB = targetItemMods.defenseUpPct ? reducedA * (1 - targetItemMods.defenseUpPct) : reducedA
+  const reducedC = Math.max(0, Math.floor(reducedB) - Math.max(0, Math.floor(targetItemMods.flatDamageReduction || 0)))
+  const finalDamage = Math.max(0, Math.floor(reducedC))
+
+  const nextMatch = { ...match, players: match.players.map((p) => ({ ...p })) }
+  const nextAttacker = getPlayerByIndex(nextMatch, attackerIndex)
+  const nextTarget = getPlayerByIndex(nextMatch, targetIndex)
+
+  const beforeShield = Math.max(0, Math.floor(nextTarget.shield || 0))
+  const shieldAbsorb = Math.min(beforeShield, finalDamage)
+  const afterShield = finalDamage - shieldAbsorb
+  nextTarget.shield = beforeShield - shieldAbsorb
+
+  const beforeHp = Math.max(0, Math.floor(nextTarget.hp || 0))
+  nextTarget.hp = clamp(beforeHp - afterShield, 0, Math.max(1, nextTarget.baseHP || 1))
+
+  let reflected = 0
+  const reflect = getActiveModifier(nextTarget?.effects?.reflect)
+  if (reflect && finalDamage > 0) {
+    reflected = Math.max(0, Math.floor(finalDamage * reflect.pct))
+    if (reflected > 0) {
+      const aBeforeHp = Math.max(0, Math.floor(nextAttacker.hp || 0))
+      nextAttacker.hp = clamp(aBeforeHp - reflected, 0, Math.max(1, nextAttacker.baseHP || 1))
+    }
+  }
+
+  let countered = 0
+  const counter = nextTarget?.effects?.counter
+  if (counter && typeof counter.damage === 'number' && (counter.turns || 0) > 0) {
+    countered = Math.max(0, Math.floor(counter.damage))
+    if (countered > 0) {
+      const aBeforeHp = Math.max(0, Math.floor(nextAttacker.hp || 0))
+      nextAttacker.hp = clamp(aBeforeHp - countered, 0, Math.max(1, nextAttacker.baseHP || 1))
+    }
+  }
+
+  let itemStunApplied = false
+  if (finalDamage > 0 && attackerItemMods.stunChanceOnDamage > 0) {
+    const chance = Math.max(0, Math.min(1, attackerItemMods.stunChanceOnDamage))
+    if (Math.random() < chance) {
+      nextTarget.effects = nextTarget.effects && typeof nextTarget.effects === 'object' ? nextTarget.effects : {}
+      nextTarget.effects.stunTurns = Math.max(0, Math.floor(nextTarget.effects.stunTurns || 0))
+      nextTarget.effects.stunTurns = Math.max(nextTarget.effects.stunTurns, 1)
+      itemStunApplied = true
+    }
+  }
+
+  return { match: nextMatch, dealt: finalDamage, evaded: false, reflected, countered, itemStunApplied, crit: critRoll }
+}
+
+function startTurnTick(match, currentPlayerIndex) {
+  const nextMatch = { ...match, players: match.players.map((p) => ({ ...p })) }
+  const player = getPlayerByIndex(nextMatch, currentPlayerIndex)
+  if (!player) return { match: nextMatch, events: [] }
+
+  const events = []
+  const cooldowns = Array.isArray(player.cooldowns) ? player.cooldowns : [0, 0, 0, 0]
+  player.cooldowns = cooldowns.map((v) => Math.max(0, Math.floor(v || 0) - 1))
+
+  applyTurnStartItems(player, events)
+
+  const effects = player.effects && typeof player.effects === 'object' ? { ...player.effects } : {}
+
+  const dots = Array.isArray(effects.dot) ? effects.dot.map((d) => ({ ...d })) : []
+  const nextDots = []
+  for (const dot of dots) {
+    const dmg = Math.max(0, Math.floor(dot.damage || 0))
+    const turns = Math.max(0, Math.floor(dot.turns || 0))
+    if (turns <= 0) continue
+    if (dmg > 0) {
+      player.hp = clamp((player.hp || 0) - dmg, 0, Math.max(1, player.baseHP || 1))
+      events.push({ kind: 'dot', playerIndex: currentPlayerIndex, amount: dmg })
+    }
+    if (turns - 1 > 0) nextDots.push({ ...dot, turns: turns - 1 })
+  }
+  effects.dot = nextDots
+
+  const hots = Array.isArray(effects.hot) ? effects.hot.map((h) => ({ ...h })) : []
+  const nextHots = []
+  for (const hot of hots) {
+    const heal = Math.max(0, Math.floor(hot.heal || 0))
+    const turns = Math.max(0, Math.floor(hot.turns || 0))
+    if (turns <= 0) continue
+    if (heal > 0) {
+      player.hp = clamp((player.hp || 0) + heal, 0, Math.max(1, player.baseHP || 1))
+      events.push({ kind: 'hot', playerIndex: currentPlayerIndex, amount: heal })
+    }
+    if (turns - 1 > 0) nextHots.push({ ...hot, turns: turns - 1 })
+  }
+  effects.hot = nextHots
+
+  const timedKeys = ['damageReduction', 'vulnerability', 'reflect', 'evasion', 'counter', 'attack']
+  for (const key of timedKeys) {
+    const val = effects[key]
+    if (!val || typeof val !== 'object') continue
+    const turns = Math.max(0, Math.floor(val.turns || 0))
+    if (turns - 1 > 0) effects[key] = { ...val, turns: turns - 1 }
+    else delete effects[key]
+  }
+
+  const dodgeAllTurns = Math.max(0, Math.floor(effects.dodgeAllTurns || 0))
+  effects.dodgeAllTurns = dodgeAllTurns > 0 ? dodgeAllTurns - 1 : 0
+
+  const immunityTurns = Math.max(0, Math.floor(effects.immunityTurns || 0))
+  effects.immunityTurns = immunityTurns > 0 ? immunityTurns - 1 : 0
+
+  const stunTurns = Math.max(0, Math.floor(effects.stunTurns || 0))
+  effects.stunTurns = stunTurns > 0 ? stunTurns - 1 : 0
+
+  player.effects = effects
+  return { match: nextMatch, events }
+}
+
+function isMatchOver(match) {
+  const p1 = getPlayerByIndex(match, 1)
+  const p2 = getPlayerByIndex(match, 2)
+  if (!p1 || !p2) return false
+  return (p1.hp || 0) <= 0 || (p2.hp || 0) <= 0
+}
+
+function isTurnLimitReached(match) {
+  return getTurnCount(match) >= 10
+}
+
+function finalizeWinner(match) {
+  const p1 = getPlayerByIndex(match, 1)
+  const p2 = getPlayerByIndex(match, 2)
+  if (!p1 || !p2) return match
+  if ((p1.hp || 0) <= 0 && (p2.hp || 0) <= 0) {
+    return { ...match, endedAt: Date.now(), result: { kind: 'draw', reason: 'hp_zero' } }
+  }
+  if ((p1.hp || 0) <= 0) {
+    return { ...match, endedAt: Date.now(), result: { kind: 'win', winnerPlayerIndex: 2, reason: 'hp_zero' } }
+  }
+  if ((p2.hp || 0) <= 0) {
+    return { ...match, endedAt: Date.now(), result: { kind: 'win', winnerPlayerIndex: 1, reason: 'hp_zero' } }
+  }
+  return match
+}
+
+function finalizeByTurnLimit(match) {
+  const p1 = getPlayerByIndex(match, 1)
+  const p2 = getPlayerByIndex(match, 2)
+  if (!p1 || !p2) return match
+  const hp1 = Math.max(0, Math.floor(p1.hp || 0))
+  const hp2 = Math.max(0, Math.floor(p2.hp || 0))
+  if (hp1 === hp2) {
+    return { ...match, endedAt: Date.now(), result: { kind: 'draw', reason: 'turn_limit' } }
+  }
+  return {
+    ...match,
+    endedAt: Date.now(),
+    result: { kind: 'win', winnerPlayerIndex: hp1 > hp2 ? 1 : 2, reason: 'turn_limit' },
+  }
+}
+
+function maybeFinalizeMatch(match) {
+  if (!match || match.endedAt) return match
+  if (isMatchOver(match)) return finalizeWinner(match)
+  return match
+}
+
+function advanceTurn(match) {
+  const currentTurnPlayerIndex = match.currentTurnPlayerIndex ?? match.activePlayerIndex
+  const nextPlayerIndex = currentTurnPlayerIndex === 1 ? 2 : 1
+  const nextTurnCount = (match.turnCount ?? match.turn ?? 1) + 1
+
+  let nextMatch = {
+    ...match,
+    turnCount: nextTurnCount,
+    currentTurnPlayerIndex: nextPlayerIndex,
+    turn: nextTurnCount,
+    activePlayerIndex: nextPlayerIndex,
+    lastTurnEndedAt: Date.now(),
+    lastTurnEndedBy: currentTurnPlayerIndex,
+  }
+
+  const tick = startTurnTick(nextMatch, nextPlayerIndex)
+  nextMatch = tick.match
+
+  const current = getPlayerByIndex(nextMatch, nextPlayerIndex)
+  const stunned = Math.max(0, Math.floor(current?.effects?.stunTurns || 0))
+  if (stunned > 0) {
+    const skip = advanceTurn(nextMatch)
+    return { match: skip.match, events: [...tick.events, { kind: 'stun-skip', playerIndex: nextPlayerIndex }, ...skip.events] }
+  }
+
+  return { match: nextMatch, events: tick.events }
+}
+
+function createMatchFromPlayerDescriptors(roomCode, descriptors) {
+  const players = descriptors
+    .map((d) => {
+      const hero = getHeroDefinition(d.heroId)
+      if (!hero) return null
+      return {
+        playerIndex: d.playerIndex,
+        socketId: d.socketId,
+        heroId: d.heroId,
+        heroName: hero.name,
+        baseHP: hero.baseHP,
+        hp: hero.baseHP,
+        itemIds: Array.isArray(d.itemIds) ? d.itemIds : [],
+        shield: 0,
+        cooldowns: [0, 0, 0, 0],
+        effects: { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0, immunityTurns: 0 },
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.playerIndex - b.playerIndex)
+
+  if (players.length !== 2) return null
+
+  const startingPlayerIndex = Math.random() < 0.5 ? 1 : 2
+  let matchState = {
+    roomCode,
+    startedAt: Date.now(),
+    turnCount: 1,
+    currentTurnPlayerIndex: startingPlayerIndex,
+    turn: 1,
+    activePlayerIndex: startingPlayerIndex,
+    players,
+  }
+
+  const firstTick = startTurnTick(matchState, startingPlayerIndex)
+  matchState = { ...firstTick.match, lastTurnStartEvents: firstTick.events }
+  return matchState
+}
+
+function leaveCurrentRoom(socket) {
+  const code = socket.data.roomCode
+  if (!code || !rooms.has(code)) {
+    socket.data.roomCode = undefined
+    return
+  }
+
+  const room = rooms.get(code)
+  room.players.delete(socket.id)
+  if (socket.connected) {
+    socket.leave(code)
+  }
+  socket.data.roomCode = undefined
+
+  socket.to(code).emit('player-left', { roomCode: code })
+  broadcastRoomState(code)
+
+  if (room.match) {
+    room.match = null
+    for (const [id, player] of room.players.entries()) {
+      room.players.set(id, { ...player, isReady: false, readyAt: undefined })
+    }
+    io.to(code).emit('match-cancelled', { roomCode: code, reason: 'player_left' })
+    io.to(code).emit('player-ready-state', { roomCode: code, readyCount: 0, playerCount: room.players.size })
+  }
+
+  if (room.players.size === 0) {
+    rooms.delete(code)
+  }
+}
+
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok' })
+})
+
+app.post('/api/rooms', (_req, res) => {
+  const roomCode = ensureUniqueRoomCode()
+  rooms.set(roomCode, createRoomRecord())
+  res.status(201).json({ roomCode })
+})
+
+app.get('/api/rooms/:code', (req, res) => {
+  const roomCode = req.params.code.toUpperCase()
+  if (!rooms.has(roomCode)) {
+    return res.status(404).json({ error: 'Room not found' })
+  }
+  const room = rooms.get(roomCode)
+  return res.json({
+    roomCode,
+    playerCount: room.players.size,
+    maxPlayers: 2,
+  })
+})
+
+app.get('/api/game-data', (_req, res) => {
+  res.json({ heroes: HEROES, items: GLOBAL_ITEMS })
+})
+
+io.on('connection', (socket) => {
+  socket.emit('socket-ready', { id: socket.id })
+
+  socket.on('create-room', () => {
+    leaveCurrentRoom(socket)
+
+    const roomCode = ensureUniqueRoomCode()
+    const room = createRoomRecord()
+    rooms.set(roomCode, room)
+
+    socket.join(roomCode)
+    socket.data.roomCode = roomCode
+    room.players.set(socket.id, { joinedAt: Date.now(), setup: null, isReady: false, readyAt: undefined })
+
+    socket.emit('room-created', { roomCode, playerCount: 1, maxPlayers: 2 })
+    broadcastRoomState(roomCode)
+  })
+
+  socket.on('join-room', ({ roomCode } = {}) => {
+    leaveCurrentRoom(socket)
+
+    const code = roomCode?.toString().trim().toUpperCase()
+    if (!code || !rooms.has(code)) {
+      socket.emit('room-error', { error: 'Room not found' })
+      return
+    }
+
+    const room = rooms.get(code)
+    if (room.players.size >= 2) {
+      socket.emit('room-error', { error: 'Room is full' })
+      return
+    }
+
+    socket.join(code)
+    socket.data.roomCode = code
+    room.players.set(socket.id, { joinedAt: Date.now(), setup: null, isReady: false, readyAt: undefined })
+
+    socket.emit('room-joined', { roomCode: code, playerCount: room.players.size, maxPlayers: 2 })
+    socket.to(code).emit('player-joined', { roomCode: code })
+
+    broadcastRoomState(code)
+    if (room.players.size === 2) {
+      io.to(code).emit('room-ready', { roomCode: code })
+    }
+  })
+
+  socket.on('leave-room', () => {
+    leaveCurrentRoom(socket)
+  })
+
+  socket.on('player-ready', ({ heroId, itemIds } = {}) => {
+    const code = socket.data.roomCode
+    if (!code || !rooms.has(code)) {
+      socket.emit('room-error', { error: 'Not in a room' })
+      return
+    }
+
+    const heroKey = heroId?.toString().trim().toLowerCase()
+    if (!heroKey || !HEROES[heroKey]) {
+      socket.emit('room-error', { error: 'Invalid hero' })
+      return
+    }
+
+    const rawItems = Array.isArray(itemIds) ? itemIds : []
+    const cleanItemIds = [...new Set(rawItems.map((v) => v?.toString()).filter(Boolean))]
+    if (cleanItemIds.length > 3) {
+      socket.emit('room-error', { error: 'You can select up to 3 items' })
+      return
+    }
+    if (cleanItemIds.length !== 3) {
+      socket.emit('room-error', { error: 'Select exactly 3 items' })
+      return
+    }
+
+    const itemsById = new Set(GLOBAL_ITEMS.map((i) => i.id))
+    const invalidItem = cleanItemIds.find((id) => !itemsById.has(id))
+    if (invalidItem) {
+      socket.emit('room-error', { error: 'Invalid item selection' })
+      return
+    }
+
+    const room = rooms.get(code)
+    const player = room.players.get(socket.id)
+    if (!player) {
+      socket.emit('room-error', { error: 'Player not registered in room' })
+      return
+    }
+
+    const setup = {
+      heroId: heroKey,
+      itemIds: cleanItemIds,
+    }
+
+    room.players.set(socket.id, { ...player, setup, isReady: true, readyAt: Date.now() })
+
+    socket.emit('player-ready-saved', { roomCode: code, setup })
+
+    const readyCount = [...room.players.values()].filter((p) => p.isReady).length
+    io.to(code).emit('player-ready-state', { roomCode: code, readyCount, playerCount: room.players.size })
+
+    const bothReady = room.players.size === 2 && readyCount === 2
+    if (!bothReady || room.match) return
+
+    const playerEntries = [...room.players.entries()].sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))
+    const descriptors = playerEntries.map(([id, p], index) => ({
+      playerIndex: index + 1,
+      socketId: id,
+      heroId: p.setup.heroId,
+      itemIds: p.setup.itemIds,
+    }))
+    const matchState = createMatchFromPlayerDescriptors(code, descriptors)
+    if (!matchState) {
+      socket.emit('room-error', { error: 'Failed to start match' })
+      return
+    }
+
+    room.match = matchState
+    io.to(code).emit('match-started', matchState)
+  })
+
+  socket.on('play-again', () => {
+    const code = socket.data.roomCode
+    if (!code || !rooms.has(code)) {
+      socket.emit('room-error', { error: 'Not in a room' })
+      return
+    }
+
+    const room = rooms.get(code)
+    if (room.players.size !== 2) {
+      socket.emit('room-error', { error: 'Need 2 players to play again' })
+      return
+    }
+
+    const existing = room.match
+    const existingPlayers = Array.isArray(existing?.players) ? existing.players : null
+    let descriptors = null
+
+    if (existingPlayers && existingPlayers.length === 2) {
+      const stillConnected = existingPlayers.every((p) => room.players.has(p.socketId))
+      if (!stillConnected) {
+        socket.emit('room-error', { error: 'A player is missing' })
+        return
+      }
+      descriptors = existingPlayers.map((p) => ({
+        playerIndex: p.playerIndex,
+        socketId: p.socketId,
+        heroId: p.heroId,
+        itemIds: p.itemIds,
+      }))
+    } else {
+      const playerEntries = [...room.players.entries()].sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))
+      const bothReady = playerEntries.length === 2 && playerEntries.every(([, p]) => p?.setup?.heroId && Array.isArray(p?.setup?.itemIds) && p.setup.itemIds.length === 3)
+      if (!bothReady) {
+        socket.emit('room-error', { error: 'Both players must be ready' })
+        return
+      }
+      descriptors = playerEntries.map(([id, p], index) => ({
+        playerIndex: index + 1,
+        socketId: id,
+        heroId: p.setup.heroId,
+        itemIds: p.setup.itemIds,
+      }))
+    }
+
+    const matchState = createMatchFromPlayerDescriptors(code, descriptors)
+    if (!matchState) {
+      socket.emit('room-error', { error: 'Failed to start match' })
+      return
+    }
+
+    room.match = matchState
+    io.to(code).emit('match-started', matchState)
+  })
+
+  socket.on('player-action', ({ kind, skillIndex } = {}) => {
+    const code = socket.data.roomCode
+    if (!code || !rooms.has(code)) {
+      socket.emit('room-error', { error: 'Not in a room' })
+      return
+    }
+
+    const room = rooms.get(code)
+    if (!room.match) {
+      socket.emit('room-error', { error: 'No active match' })
+      return
+    }
+
+    if (room.match?.endedAt) {
+      socket.emit('room-error', { error: 'Match is over' })
+      return
+    }
+
+    if (room.match?.actionLock) {
+      socket.emit('room-error', { error: 'Action in progress' })
+      return
+    }
+
+    const match = room.match
+    const playerIndex = getPlayerIndexFromMatch(match, socket.id)
+    if (!playerIndex) {
+      socket.emit('room-error', { error: 'Player not registered in match' })
+      return
+    }
+
+    const currentTurnPlayerIndex = match.currentTurnPlayerIndex ?? match.activePlayerIndex
+    if (playerIndex !== currentTurnPlayerIndex) {
+      socket.emit('room-error', { error: 'Not your turn' })
+      return
+    }
+
+    const actor = getPlayerByIndex(match, playerIndex)
+    if (!actor) {
+      socket.emit('room-error', { error: 'Actor missing' })
+      return
+    }
+
+    const stunned = Math.max(0, Math.floor(actor?.effects?.stunTurns || 0))
+    if (stunned > 0) {
+      socket.emit('room-error', { error: 'You are stunned' })
+      return
+    }
+
+    const hero = getHeroDefinition(actor.heroId)
+    if (!hero) {
+      socket.emit('room-error', { error: 'Hero not found' })
+      return
+    }
+
+    const nextMatchBase = { ...match, actionLock: true }
+    room.match = nextMatchBase
+
+    let nextMatch = JSON.parse(JSON.stringify(nextMatchBase))
+    const log = []
+
+    const enemyIndex = getOpponentIndex(playerIndex)
+
+    if (kind === 'normal') {
+      const effect = hero.normalAttack?.effect
+      if (!effect) {
+        socket.emit('room-error', { error: 'Normal attack missing' })
+        room.match = { ...match, actionLock: false }
+        return
+      }
+
+      if (effect.kind === 'damage') {
+        const hits = Math.max(1, Math.floor(effect.hits || 1))
+        const perHit = Math.max(0, Math.floor(effect.amount || 0))
+        let totalDealt = 0
+        let totalReflected = 0
+        let totalCountered = 0
+        let evaded = false
+        for (let i = 0; i < hits; i += 1) {
+          const result = applyDamage(nextMatch, playerIndex, enemyIndex, perHit)
+          nextMatch = result.match
+          totalDealt += result.dealt
+          totalReflected += result.reflected
+          totalCountered += result.countered
+          evaded = evaded || result.evaded
+        }
+        log.push({
+          kind: 'normal',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          name: hero.normalAttack?.name || 'Normal Attack',
+          dealt: totalDealt,
+          evaded,
+          reflected: totalReflected,
+          countered: totalCountered,
+        })
+      }
+    } else if (kind === 'skill') {
+      const index = Math.max(0, Math.min(3, Math.floor(skillIndex || 0)))
+      const skill = hero.skills?.[index]
+      if (!skill) {
+        socket.emit('room-error', { error: 'Skill not found' })
+        room.match = { ...match, actionLock: false }
+        return
+      }
+      const isUltimate = skill.type === 'ultimate'
+
+      const actorNext = getPlayerByIndex(nextMatch, playerIndex)
+      actorNext.cooldowns = Array.isArray(actorNext.cooldowns) ? actorNext.cooldowns : [0, 0, 0, 0]
+      if ((actorNext.cooldowns[index] || 0) > 0) {
+        socket.emit('room-error', { error: 'Skill on cooldown' })
+        room.match = { ...match, actionLock: false }
+        return
+      }
+
+      const effect = skill.effect
+      const effectKind = effect?.kind
+      if (!effectKind) {
+        socket.emit('room-error', { error: 'Skill effect missing' })
+        room.match = { ...match, actionLock: false }
+        return
+      }
+
+      if (typeof skill.cooldown === 'number' && skill.cooldown > 0) {
+        actorNext.cooldowns[index] = Math.max(0, Math.floor(skill.cooldown))
+      }
+
+      const ensureEffects = (p) => {
+        p.effects = p.effects && typeof p.effects === 'object' ? p.effects : { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0 }
+        p.effects.dot = Array.isArray(p.effects.dot) ? p.effects.dot : []
+        p.effects.hot = Array.isArray(p.effects.hot) ? p.effects.hot : []
+        p.effects.dodgeAllTurns = Math.max(0, Math.floor(p.effects.dodgeAllTurns || 0))
+        p.effects.stunTurns = Math.max(0, Math.floor(p.effects.stunTurns || 0))
+      }
+
+      const targetEnemy = getPlayerByIndex(nextMatch, enemyIndex)
+      ensureEffects(actorNext)
+      ensureEffects(targetEnemy)
+
+      if (effectKind === 'damage') {
+        const dmg = Math.max(0, Math.floor(effect.amount || 0))
+        const result = applyDamage(nextMatch, playerIndex, enemyIndex, dmg, { isUltimate })
+        nextMatch = result.match
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt: result.dealt,
+          evaded: result.evaded,
+          reflected: result.reflected,
+          countered: result.countered,
+          crit: result.crit,
+          itemStunApplied: result.itemStunApplied,
+        })
+      } else if (effectKind === 'shield') {
+        const shield = Math.max(0, Math.floor(effect.shield || 0))
+        const actorAfter = getPlayerByIndex(nextMatch, playerIndex)
+        actorAfter.shield = Math.max(0, Math.floor(actorAfter.shield || 0)) + shield
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: playerIndex,
+          slot: index + 1,
+          name: skill.name,
+          gainedShield: shield,
+        })
+      } else if (effectKind === 'immunity') {
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        actorNext.effects.immunityTurns = Math.max(actorNext.effects.immunityTurns || 0, turns)
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: playerIndex,
+          slot: index + 1,
+          name: skill.name,
+          applied: { kind: 'immunity', turns },
+        })
+      } else if (effectKind === 'damage_and_heal') {
+        const dmg = Math.max(0, Math.floor(effect.damage || 0))
+        const healSelf = Math.max(0, Math.floor(effect.healSelf || 0))
+        const result = applyDamage(nextMatch, playerIndex, enemyIndex, dmg, { isUltimate })
+        nextMatch = result.match
+        const actorAfter = getPlayerByIndex(nextMatch, playerIndex)
+        const healed = applyHeal(actorAfter, healSelf)
+        Object.assign(actorAfter, healed.player)
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt: result.dealt,
+          evaded: result.evaded,
+          reflected: result.reflected,
+          countered: result.countered,
+          crit: result.crit,
+          itemStunApplied: result.itemStunApplied,
+          healedSelf: healed.healed,
+        })
+      } else if (effectKind === 'damage_and_stun') {
+        const dmg = Math.max(0, Math.floor(effect.damage || 0))
+        const stunTurns = Math.max(1, Math.floor(effect.stunTurns || 1))
+        const result = applyDamage(nextMatch, playerIndex, enemyIndex, dmg, { isUltimate })
+        nextMatch = result.match
+        const enemyAfter = getPlayerByIndex(nextMatch, enemyIndex)
+        ensureEffects(enemyAfter)
+        enemyAfter.effects.stunTurns = Math.max(enemyAfter.effects.stunTurns || 0, stunTurns)
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt: result.dealt,
+          evaded: result.evaded,
+          reflected: result.reflected,
+          countered: result.countered,
+          crit: result.crit,
+          itemStunApplied: result.itemStunApplied,
+          applied: { kind: 'stun', turns: stunTurns },
+        })
+      } else if (effectKind === 'damage_with_miss') {
+        const dmg = Math.max(0, Math.floor(effect.damage || 0))
+        const missChance = Math.max(0, Math.min(1, Number(effect.missChance || 0)))
+        const missed = missChance > 0 && Math.random() < missChance
+        if (missed) {
+          log.push({
+            kind: 'skill',
+            actorPlayerIndex: playerIndex,
+            targetPlayerIndex: enemyIndex,
+            slot: index + 1,
+            name: skill.name,
+            dealt: 0,
+            evaded: true,
+            missed: true,
+          })
+        } else {
+          const result = applyDamage(nextMatch, playerIndex, enemyIndex, dmg, { isUltimate })
+          nextMatch = result.match
+          log.push({
+            kind: 'skill',
+            actorPlayerIndex: playerIndex,
+            targetPlayerIndex: enemyIndex,
+            slot: index + 1,
+            name: skill.name,
+            dealt: result.dealt,
+            evaded: result.evaded,
+            reflected: result.reflected,
+            countered: result.countered,
+            missed: false,
+            crit: result.crit,
+            itemStunApplied: result.itemStunApplied,
+          })
+        }
+      } else if (effectKind === 'damage_and_attack_down') {
+        const dmg = Math.max(0, Math.floor(effect.damage || 0))
+        const mult = getItemMods(actorNext).debuffMultiplier
+        const pct = Math.max(0, Math.min(0.6, Number(effect.attackDownPct || 0) * mult))
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        const result = applyDamage(nextMatch, playerIndex, enemyIndex, dmg, { isUltimate })
+        nextMatch = result.match
+        const enemyAfter = getPlayerByIndex(nextMatch, enemyIndex)
+        ensureEffects(enemyAfter)
+        enemyAfter.effects.attack = { pct: -pct, turns }
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt: result.dealt,
+          evaded: result.evaded,
+          reflected: result.reflected,
+          countered: result.countered,
+          crit: result.crit,
+          itemStunApplied: result.itemStunApplied,
+          applied: { kind: 'attack', pct: -pct, turns },
+        })
+      } else if (effectKind === 'attack_down_and_heal') {
+        const mult = getItemMods(actorNext).debuffMultiplier
+        const pct = Math.max(0, Math.min(0.6, Number(effect.attackDownPct || 0) * mult))
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        const healSelf = Math.max(0, Math.floor(effect.healSelf || 0))
+        const enemyAfter = getPlayerByIndex(nextMatch, enemyIndex)
+        ensureEffects(enemyAfter)
+        enemyAfter.effects.attack = { pct: -pct, turns }
+        const healed = applyHeal(actorNext, healSelf)
+        Object.assign(actorNext, healed.player)
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          applied: { kind: 'attack', pct: -pct, turns },
+          healedSelf: healed.healed,
+        })
+      } else if (effectKind === 'buff_attack_and_speed') {
+        const pct = Math.max(0, Math.min(1, Number(effect.attackUpPct || 0)))
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        actorNext.effects.attack = { pct, turns }
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: playerIndex,
+          slot: index + 1,
+          name: skill.name,
+          applied: { kind: 'attack', pct, turns },
+        })
+      } else if (effectKind === 'damage_and_cooldown_increase') {
+        const dmg = Math.max(0, Math.floor(effect.damage || 0))
+        const inc = Math.max(1, Math.floor(effect.increaseEnemyCooldownBy || 1))
+        const result = applyDamage(nextMatch, playerIndex, enemyIndex, dmg, { isUltimate })
+        nextMatch = result.match
+        const enemyAfter = getPlayerByIndex(nextMatch, enemyIndex)
+        enemyAfter.cooldowns = Array.isArray(enemyAfter.cooldowns) ? enemyAfter.cooldowns : [0, 0, 0, 0]
+        enemyAfter.cooldowns = enemyAfter.cooldowns.map((v) => Math.max(0, Math.floor(v || 0) + inc))
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt: result.dealt,
+          evaded: result.evaded,
+          reflected: result.reflected,
+          countered: result.countered,
+          crit: result.crit,
+          itemStunApplied: result.itemStunApplied,
+          applied: { kind: 'cooldown_increase', amount: inc },
+        })
+      } else if (effectKind === 'dodge_all_and_counter') {
+        const dodgeAllTurns = Math.max(1, Math.floor(effect.dodgeAllTurns || 1))
+        const counterDamage = Math.max(0, Math.floor(effect.counterDamage || 0))
+        const counterTurns = Math.max(1, Math.floor(effect.counterTurns || 1))
+        actorNext.effects.dodgeAllTurns = Math.max(actorNext.effects.dodgeAllTurns || 0, dodgeAllTurns)
+        actorNext.effects.counter = counterDamage > 0 ? { damage: counterDamage, turns: counterTurns } : undefined
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: playerIndex,
+          slot: index + 1,
+          name: skill.name,
+          applied: {
+            kind: 'dodge_all_and_counter',
+            dodgeAllTurns,
+            counterDamage,
+            counterTurns,
+          },
+        })
+      } else if (effectKind === 'damage_and_random') {
+        const dmg = Math.max(0, Math.floor(effect.damage || 0))
+        const table = Array.isArray(effect.table) ? effect.table : []
+        const result = applyDamage(nextMatch, playerIndex, enemyIndex, dmg, { isUltimate })
+        nextMatch = result.match
+        const roll = table.length ? table[Math.floor(Math.random() * table.length)] : null
+        const enemyAfter = getPlayerByIndex(nextMatch, enemyIndex)
+        const actorAfter = getPlayerByIndex(nextMatch, playerIndex)
+        ensureEffects(enemyAfter)
+        ensureEffects(actorAfter)
+        let rolled = null
+        if (roll?.kind === 'stun') {
+          const turns = Math.max(1, Math.floor(roll.turns || 1))
+          enemyAfter.effects.stunTurns = Math.max(enemyAfter.effects.stunTurns || 0, turns)
+          rolled = { kind: 'stun', turns }
+        } else if (roll?.kind === 'heal_self') {
+          const amount = Math.max(0, Math.floor(roll.amount || 0))
+          const healed = applyHeal(actorAfter, amount)
+          Object.assign(actorAfter, healed.player)
+          rolled = { kind: 'heal_self', amount: healed.healed }
+        } else if (roll?.kind === 'bonus_damage') {
+          const bonus = Math.max(0, Math.floor(roll.amount || 0))
+          const bonusResult = applyDamage(nextMatch, playerIndex, enemyIndex, bonus, { isUltimate })
+          nextMatch = bonusResult.match
+          rolled = { kind: 'bonus_damage', amount: bonusResult.dealt }
+        }
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt: result.dealt,
+          evaded: result.evaded,
+          reflected: result.reflected,
+          countered: result.countered,
+          crit: result.crit,
+          itemStunApplied: result.itemStunApplied,
+          rolled,
+        })
+      } else if (effectKind === 'damage_with_recoil') {
+        const dmg = Math.max(0, Math.floor(effect.damage || 0))
+        const recoilSelf = Math.max(0, Math.floor(effect.recoilSelf || 0))
+        const result = applyDamage(nextMatch, playerIndex, enemyIndex, dmg, { isUltimate })
+        nextMatch = result.match
+        const actorAfter = getPlayerByIndex(nextMatch, playerIndex)
+        const before = Math.max(0, Math.floor(actorAfter.hp || 0))
+        actorAfter.hp = clamp(before - recoilSelf, 0, Math.max(1, actorAfter.baseHP || 1))
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt: result.dealt,
+          evaded: result.evaded,
+          reflected: result.reflected,
+          countered: result.countered,
+          crit: result.crit,
+          itemStunApplied: result.itemStunApplied,
+          recoilSelf,
+        })
+      } else if (effectKind === 'heal') {
+        const amount = Math.max(0, Math.floor(effect.amount || 0))
+        const healed = applyHeal(actorNext, amount)
+        Object.assign(actorNext, healed.player)
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: playerIndex,
+          slot: index + 1,
+          name: skill.name,
+          healed: healed.healed,
+        })
+      } else if (effectKind === 'damage_reduction') {
+        const reduction = Math.max(0, Math.min(0.9, Number(effect.reduction || 0)))
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        actorNext.effects.damageReduction = { pct: reduction, turns }
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: playerIndex,
+          slot: index + 1,
+          name: skill.name,
+          applied: { kind: 'damage_reduction', pct: reduction, turns },
+        })
+      } else if (effectKind === 'vulnerability') {
+        const bonus = Math.max(0, Math.min(2, Number(effect.bonusDamageTaken || 0)))
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        targetEnemy.effects.vulnerability = { pct: bonus, turns }
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          applied: { kind: 'vulnerability', pct: bonus, turns },
+        })
+      } else if (effectKind === 'damage_over_time') {
+        const initial = Math.max(0, Math.floor(effect.initialDamage || 0))
+        const dotDamage = Math.max(0, Math.floor(effect.dotDamage || 0))
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        let dealt = 0
+        let reflected = 0
+        let countered = 0
+        let evaded = false
+        if (initial > 0) {
+          const result = applyDamage(nextMatch, playerIndex, enemyIndex, initial, { isUltimate })
+          nextMatch = result.match
+          dealt = result.dealt
+          reflected = result.reflected
+          countered = result.countered
+          evaded = result.evaded
+        }
+        const enemyNext = getPlayerByIndex(nextMatch, enemyIndex)
+        ensureEffects(enemyNext)
+        if (dotDamage > 0) enemyNext.effects.dot.push({ damage: dotDamage, turns })
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt,
+          evaded,
+          reflected,
+          countered,
+          applied: dotDamage > 0 ? { kind: 'dot', damage: dotDamage, turns } : undefined,
+        })
+      } else if (effectKind === 'burst_and_dot') {
+        const burst = Math.max(0, Math.floor(effect.burstDamage || 0))
+        const dotDamage = Math.max(0, Math.floor(effect.dotDamage || 0))
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        const result = applyDamage(nextMatch, playerIndex, enemyIndex, burst, { isUltimate })
+        nextMatch = result.match
+        const enemyNext = getPlayerByIndex(nextMatch, enemyIndex)
+        ensureEffects(enemyNext)
+        if (dotDamage > 0) enemyNext.effects.dot.push({ damage: dotDamage, turns })
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt: result.dealt,
+          evaded: result.evaded,
+          reflected: result.reflected,
+          countered: result.countered,
+          applied: dotDamage > 0 ? { kind: 'dot', damage: dotDamage, turns } : undefined,
+        })
+      } else if (effectKind === 'damage_and_shield') {
+        const dmg = Math.max(0, Math.floor(effect.damage || 0))
+        const shield = Math.max(0, Math.floor(effect.shield || 0))
+        const result = applyDamage(nextMatch, playerIndex, enemyIndex, dmg, { isUltimate })
+        nextMatch = result.match
+        const actorAfter = getPlayerByIndex(nextMatch, playerIndex)
+        actorAfter.shield = Math.max(0, Math.floor(actorAfter.shield || 0)) + shield
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt: result.dealt,
+          evaded: result.evaded,
+          reflected: result.reflected,
+          countered: result.countered,
+          gainedShield: shield,
+        })
+      } else if (effectKind === 'fortify') {
+        const shield = Math.max(0, Math.floor(effect.shield || 0))
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        const counterDamageOnHit = Math.max(0, Math.floor(effect.counterDamageOnHit || 0))
+        actorNext.shield = Math.max(0, Math.floor(actorNext.shield || 0)) + shield
+        actorNext.effects.counter = counterDamageOnHit > 0 ? { damage: counterDamageOnHit, turns } : undefined
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: playerIndex,
+          slot: index + 1,
+          name: skill.name,
+          gainedShield: shield,
+          applied: counterDamageOnHit > 0 ? { kind: 'counter', damage: counterDamageOnHit, turns } : undefined,
+        })
+      } else if (effectKind === 'critical_strike') {
+        const dmg = Math.max(0, Math.floor(effect.damage || 0))
+        const result = applyDamage(nextMatch, playerIndex, enemyIndex, dmg, { isUltimate })
+        nextMatch = result.match
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt: result.dealt,
+          evaded: result.evaded,
+          reflected: result.reflected,
+          countered: result.countered,
+        })
+      } else if (effectKind === 'execute') {
+        const base = Math.max(0, Math.floor(effect.damage || 0))
+        const belowPct = Math.max(0, Math.min(1, Number(effect.bonusIfTargetBelowHpPct || 0)))
+        const bonusDamage = Math.max(0, Math.floor(effect.bonusDamage || 0))
+        const enemy = getPlayerByIndex(nextMatch, enemyIndex)
+        const enemyHpPct = enemy && enemy.baseHP ? (enemy.hp || 0) / enemy.baseHP : 1
+        const total = enemyHpPct <= belowPct ? base + bonusDamage : base
+        const result = applyDamage(nextMatch, playerIndex, enemyIndex, total, { isUltimate })
+        nextMatch = result.match
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: enemyIndex,
+          slot: index + 1,
+          name: skill.name,
+          dealt: result.dealt,
+          evaded: result.evaded,
+          reflected: result.reflected,
+          countered: result.countered,
+        })
+      } else if (effectKind === 'evasion') {
+        const chance = Math.max(0, Math.min(1, Number(effect.chance || 0)))
+        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        actorNext.effects.evasion = { pct: chance, turns }
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: playerIndex,
+          slot: index + 1,
+          name: skill.name,
+          applied: { kind: 'evasion', chance, turns },
+        })
+      } else {
+        log.push({
+          kind: 'skill',
+          actorPlayerIndex: playerIndex,
+          targetPlayerIndex: playerIndex,
+          slot: index + 1,
+          name: skill.name,
+          applied: { kind: effectKind },
+        })
+      }
+    } else {
+      socket.emit('room-error', { error: 'Invalid action' })
+      room.match = { ...match, actionLock: false }
+      return
+    }
+
+    if (isMatchOver(nextMatch)) {
+      nextMatch = maybeFinalizeMatch(nextMatch)
+      nextMatch.actionLock = false
+      room.match = nextMatch
+      io.to(code).emit('match-updated', nextMatch)
+      io.to(code).emit('action-resolved', { roomCode: code, log, match: nextMatch })
+      return
+    }
+
+    const advanced = advanceTurn(nextMatch)
+    nextMatch = { ...maybeFinalizeMatch(advanced.match), actionLock: false }
+    room.match = nextMatch
+    io.to(code).emit('match-updated', nextMatch)
+    io.to(code).emit('turn-updated', {
+      roomCode: code,
+      turnCount: nextMatch.turnCount,
+      currentTurnPlayerIndex: nextMatch.currentTurnPlayerIndex,
+    })
+    io.to(code).emit('action-resolved', { roomCode: code, log, tickEvents: advanced.events, match: nextMatch })
+  })
+
+  socket.on('end-turn', () => {
+    const code = socket.data.roomCode
+    if (!code || !rooms.has(code)) {
+      socket.emit('room-error', { error: 'Not in a room' })
+      return
+    }
+
+    const room = rooms.get(code)
+    if (!room.match) {
+      socket.emit('room-error', { error: 'No active match' })
+      return
+    }
+
+    const match = room.match
+    const playerIndex = getPlayerIndexFromMatch(match, socket.id)
+    if (!playerIndex) {
+      socket.emit('room-error', { error: 'Player not registered in match' })
+      return
+    }
+
+    const currentTurnPlayerIndex = match.currentTurnPlayerIndex ?? match.activePlayerIndex
+    if (playerIndex !== currentTurnPlayerIndex) {
+      socket.emit('room-error', { error: 'Not your turn' })
+      return
+    }
+
+    const advanced = advanceTurn(match)
+    const nextMatch = maybeFinalizeMatch(advanced.match)
+    room.match = nextMatch
+    io.to(code).emit('match-updated', nextMatch)
+    io.to(code).emit('turn-updated', {
+      roomCode: code,
+      turnCount: nextMatch.turnCount,
+      currentTurnPlayerIndex: nextMatch.currentTurnPlayerIndex,
+    })
+  })
+
+  socket.on('get-match-state', () => {
+    const code = socket.data.roomCode
+    if (!code || !rooms.has(code)) return
+    const room = rooms.get(code)
+    if (!room.match) return
+    socket.emit('match-updated', room.match)
+  })
+
+  socket.on('disconnect', () => {
+    leaveCurrentRoom(socket)
+  })
+})
+
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use. Stop the other process or run with a different PORT.`)
+    process.exit(1)
+  }
+  console.error(err)
+  process.exit(1)
+})
+
+// Catch-all route for React
+app.get('*', (req, res) => {
+  res.sendFile(path.join(clientDistPath, 'index.html'))
+})
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on http://localhost:${PORT}`)
+  console.log(`Also available on your network at http://[YOUR-IP-ADDRESS]:${PORT}`)
+})
