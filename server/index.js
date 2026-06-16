@@ -168,7 +168,7 @@ function getItemMods(player) {
     healPerTurn: ids.has('fishball_power') ? 5 : 0,
     reduceRandomCooldownBy: ids.has('energy_drink') ? 1 : 0,
     flatDamageReduction: ids.has('jacket_ni_kuya') ? 2 : 0,
-    stunChanceOnDamage: ids.has('old_nokia') ? 0.1 : 0,
+    stunChanceOnDamage: ids.has('old_nokia') ? 0.25 : 0,
     debuffMultiplier: ids.has('chismis_notebook') ? 1.25 : 1,
     randomBuffEachTurn: ids.has('pamahiin_charm'),
     ultimateDamageBonusPct: ids.has('final_blessing') ? 0.2 : 0,
