@@ -874,6 +874,11 @@ function App() {
       }
     }
 
+    function onPlayerReadyCancelled() {
+      setHasSentReady(false)
+      setStatus('Ready status cancelled.')
+    }
+
     function onReceiveTaunt(payload) {
       if (!payload || !payload.socketId) return
       
@@ -925,6 +930,7 @@ function App() {
     socket.on('player-ready-saved', onPlayerReadySaved)
     socket.on('player-ready-state', onPlayerReadyState)
     socket.on('receive-taunt', onReceiveTaunt)
+    socket.on('player-ready-cancelled', onPlayerReadyCancelled)
 
     return () => {
       isActive = false
@@ -945,6 +951,7 @@ function App() {
       socket.off('player-ready-saved', onPlayerReadySaved)
       socket.off('player-ready-state', onPlayerReadyState)
       socket.off('receive-taunt', onReceiveTaunt)
+      socket.off('player-ready-cancelled', onPlayerReadyCancelled)
     }
   }, [socket, serverCandidates, serverIndex])
 
@@ -1040,6 +1047,12 @@ function App() {
     }
     socket.emit('player-ready', { heroId: selectedHeroId, itemIds: selectedItemIds })
     setStatus('Sending ready...')
+  }
+
+  function handleCancelReady() {
+    if (!socket) return
+    socket.emit('cancel-ready')
+    setStatus('Cancelling ready...')
   }
 
   const handleSwitchTeam = () => {
@@ -1409,11 +1422,12 @@ function App() {
                         key={h.id}
                         type="button"
                         onClick={() => setSelectedHeroId(h.id)}
+                        disabled={hasSentReady}
                         className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-all ${
                           selectedHeroId === h.id
                             ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_10px_rgba(99,102,241,0.2)]'
                             : 'border-slate-800 bg-slate-950/30 hover:bg-slate-900/40'
-                        }`}
+                        } ${hasSentReady ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
                       >
                         {/* Hero Image Thumbnail */}
                         <div className="w-14 h-14 rounded-full border-2 border-slate-600 overflow-hidden bg-slate-800 flex items-center justify-center flex-shrink-0">
@@ -1558,7 +1572,7 @@ function App() {
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     {items.map((it) => {
                       const checked = selectedItemIds.includes(it.id)
-                      const disabled = !checked && selectedItemIds.length >= 3
+                      const disabled = hasSentReady || (!checked && selectedItemIds.length >= 3)
                       
                       // Map item IDs to their image filenames
                       const getItemImage = (itemId) => {
@@ -1592,7 +1606,7 @@ function App() {
                             checked
                               ? 'border-emerald-500 bg-emerald-500/10 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
                               : 'border-slate-800 bg-slate-950/30 hover:bg-slate-900/40'
-                          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          } ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
                         >
                           <div className="w-12 h-12 rounded-lg border border-slate-600 overflow-hidden bg-slate-800 flex items-center justify-center flex-shrink-0">
                             <img 
@@ -1633,20 +1647,37 @@ function App() {
                     })}
                   </div>
 
-                  {/* Ready Button */}
+                  {/* Ready / Cancel Ready Button Panel */}
                   {selectedItemIds.length === 3 && (
-                    <button
-                      type="button"
-                      className="mt-4 w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold text-lg rounded-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-emerald-500/30"
-                      onClick={handleReady}
-                      disabled={!isConnected || hasSentReady || !selectedHero}
-                    >
-                      {hasSentReady ? (
-                        <>⏳ Waiting for other players...</>
+                    <div className="mt-4 flex flex-col gap-2">
+                      {!hasSentReady ? (
+                        <button
+                          type="button"
+                          className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold text-lg rounded-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-emerald-500/30"
+                          onClick={handleReady}
+                          disabled={!isConnected || !selectedHero}
+                        >
+                          🎉 I'm Ready!
+                        </button>
                       ) : (
-                        <>🎉 I'm Ready!</>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            type="button"
+                            className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-slate-800 text-slate-400 font-semibold text-base rounded-xl border border-slate-700 cursor-not-allowed"
+                            disabled
+                          >
+                            ⏳ Waiting for other players...
+                          </button>
+                          <button
+                            type="button"
+                            className="w-full inline-flex items-center justify-center gap-2 px-6 py-2 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold text-base rounded-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
+                            onClick={handleCancelReady}
+                          >
+                            ❌ Cancel Ready
+                          </button>
+                        </div>
                       )}
-                    </button>
+                    </div>
                   )}
                 </div>
               </div>

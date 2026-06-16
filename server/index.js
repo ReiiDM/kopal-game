@@ -862,6 +862,34 @@ io.on('connection', (socket) => {
     io.to(code).emit('match-started', matchState)
   })
 
+  socket.on('cancel-ready', () => {
+    const code = socket.data.roomCode
+    if (!code || !rooms.has(code)) {
+      socket.emit('room-error', { error: 'Not in a room' })
+      return
+    }
+
+    const room = rooms.get(code)
+    if (room.match) {
+      socket.emit('room-error', { error: 'Cannot cancel ready after match has started' })
+      return
+    }
+
+    const player = room.players.get(socket.id)
+    if (!player) {
+      socket.emit('room-error', { error: 'Player not registered in room' })
+      return
+    }
+
+    room.players.set(socket.id, { ...player, isReady: false, readyAt: undefined })
+
+    socket.emit('player-ready-cancelled', { roomCode: code })
+
+    const readyCount = [...room.players.values()].filter((p) => p.isReady).length
+    io.to(code).emit('player-ready-state', { roomCode: code, readyCount, playerCount: room.players.size })
+    broadcastRoomState(code)
+  })
+
   socket.on('play-again', () => {
     const code = socket.data.roomCode
     if (!code || !rooms.has(code)) {
