@@ -1552,7 +1552,7 @@ io.on('connection', (socket) => {
           crit: result.crit,
         })
       } else if (effectKind === 'gym_mode') {
-        // Tara GYM! — Keith's ultimate
+        // Tara GYM! — Chano's ultimate
         const healPct = Math.max(0, Math.min(1, Number(effect.healPct || 0)))
         const attackUpPct = Math.max(0, Math.min(2, Number(effect.attackUpPct || 0)))
         const stunChancePct = Math.max(0, Math.min(1, Number(effect.stunChancePct || 0)))

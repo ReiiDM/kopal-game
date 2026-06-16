@@ -285,9 +285,9 @@ export const HEROES = {
     ],
   },
 
-  keith: {
-    id: 'keith',
-    name: 'Keith',
+  chano: {
+    id: 'chano',
+    name: 'Chano',
     baseHP: 105,
     normalAttack: {
       name: 'Tamad na Suntok',
@@ -341,7 +341,7 @@ export const HEROES = {
       },
       {
         name: 'Tara GYM!',
-        description: 'Nag-gym na si Keith. Heal + attack boost + stun chance + armor — lahat. God mode.',
+        description: 'Nag-gym na si Chano. Heal + attack boost + stun chance + armor — lahat. God mode.',
         type: 'ultimate',
         cooldown: 6,
         minTurn: 12,
