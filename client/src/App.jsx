@@ -841,6 +841,12 @@ function App() {
     socket.emit('player-action', { kind: 'skill', skillIndex: index, targetPlayerIndex: selectedTarget })
   }
 
+  function handleGoBackToSetup() {
+    if (!socket || !matchState) return
+    setShowWinnerModal(false)
+    socket.emit('go-back-to-setup')
+  }
+
   function formatPlayerLabel(index, team) {
     if (!index) return '—'
     const teamLabel = team ? `(Team ${team}) ` : ''
@@ -1785,14 +1791,14 @@ function App() {
                     🔄 Play Again
                   </button>
 
-                  {/* Character Selection Button */}
+                  {/* Change Setup Button */}
                   <button
                     type="button"
                     className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 text-white font-bold text-lg rounded-xl transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg shadow-indigo-500/30"
-                    onClick={handleGoToCharacterSelection}
+                    onClick={handleGoBackToSetup}
                     disabled={!isConnected}
                   >
-                    🎭 Character Selection
+                    🎭 Change Setup
                   </button>
 
                   {/* Main Menu Button */}

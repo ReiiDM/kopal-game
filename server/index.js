@@ -816,6 +816,28 @@ io.on('connection', (socket) => {
     io.to(code).emit('match-started', matchState)
   })
 
+  socket.on('go-back-to-setup', () => {
+    const code = socket.data.roomCode
+    if (!code || !rooms.has(code)) {
+      socket.emit('room-error', { error: 'Not in a room' })
+      return
+    }
+
+    const room = rooms.get(code)
+    // Reset match and all players' ready states
+    room.match = null
+    for (const [id, player] of room.players.entries()) {
+      room.players.set(id, {
+        ...player,
+        isReady: false,
+        readyAt: undefined,
+      })
+    }
+
+    // Notify all players in the room to go back to setup
+    io.to(code).emit('play-again-init')
+  })
+
   socket.on('player-action', ({ kind, skillIndex, targetPlayerIndex } = {}) => {
     const code = socket.data.roomCode
     if (!code || !rooms.has(code)) {
