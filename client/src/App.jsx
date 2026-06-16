@@ -992,7 +992,7 @@ function App() {
               <div className="mt-4">
                 <button
                   type="button"
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white font-medium text-sm rounded-lg transition-all duration-300"
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white font-medium text-sm rounded-lg transition-all duration-300"
                   onClick={handleSwitchTeam}
                   disabled={!isConnected}
                 >
