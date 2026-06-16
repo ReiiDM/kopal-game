@@ -374,8 +374,25 @@ function startTurnTick(match, currentPlayerIndex) {
   const stunTurns = Math.max(0, Math.floor(effects.stunTurns || 0))
   effects.stunTurns = stunTurns > 0 ? stunTurns - 1 : 0
 
+  // Handle extra turn chance
+  let extraTurnThisTurn = false
+  const extraTurnChanceTurns = Math.max(0, Math.floor(effects.extraTurnChanceTurns || 0))
+  const extraTurnChancePct = Math.max(0, Math.min(1, Number(effects.extraTurnChancePct || 0)))
+  if (extraTurnChanceTurns > 0) {
+    if (extraTurnChancePct > 0 && Math.random() < extraTurnChancePct) {
+      extraTurnThisTurn = true
+      effects.extraTurnsRemaining = (effects.extraTurnsRemaining || 0) + 1
+    }
+    if (extraTurnChanceTurns - 1 > 0) {
+      effects.extraTurnChanceTurns = extraTurnChanceTurns - 1
+    } else {
+      delete effects.extraTurnChanceTurns
+      delete effects.extraTurnChancePct
+    }
+  }
+
   player.effects = effects
-  return { match: nextMatch, events }
+  return { match: nextMatch, events, extraTurnThisTurn }
 }
 
 function isMatchOver(match) {
@@ -491,15 +508,20 @@ function advanceTurn(match) {
     const tick = startTurnTick(nextMatch, currentTurnPlayerIndex)
     nextMatch = tick.match
     
+    const events = [...tick.events]
+    if (tick.extraTurnThisTurn) {
+      events.push({ kind: 'extra-turn', playerIndex: currentTurnPlayerIndex })
+    }
+    
     // Check stunned
     const stillCurrentPlayer = getPlayerByIndex(nextMatch, currentTurnPlayerIndex)
     const stunned = Math.max(0, Math.floor(stillCurrentPlayer?.effects?.stunTurns || 0))
     if (stunned > 0) {
       const skip = advanceTurn(nextMatch)
-      return { match: skip.match, events: [...tick.events, { kind: 'stun-skip', playerIndex: currentTurnPlayerIndex }, ...skip.events] }
+      return { match: skip.match, events: [...events, { kind: 'stun-skip', playerIndex: currentTurnPlayerIndex }, ...skip.events] }
     }
     
-    return { match: nextMatch, events: [...tick.events, { kind: 'extra-turn', playerIndex: currentTurnPlayerIndex }] }
+    return { match: nextMatch, events }
   }
   
   // No extra turns: proceed to next player
@@ -524,15 +546,20 @@ function advanceTurn(match) {
 
   const tick = startTurnTick(nextMatch, nextPlayerIndex)
   nextMatch = tick.match
+  
+  const events = [...tick.events]
+  if (tick.extraTurnThisTurn) {
+    events.push({ kind: 'extra-turn', playerIndex: nextPlayerIndex })
+  }
 
   const current = getPlayerByIndex(nextMatch, nextPlayerIndex)
   const stunned = Math.max(0, Math.floor(current?.effects?.stunTurns || 0))
   if (stunned > 0) {
     const skip = advanceTurn(nextMatch)
-    return { match: skip.match, events: [...tick.events, { kind: 'stun-skip', playerIndex: nextPlayerIndex }, ...skip.events] }
+    return { match: skip.match, events: [...events, { kind: 'stun-skip', playerIndex: nextPlayerIndex }, ...skip.events] }
   }
 
-  return { match: nextMatch, events: tick.events }
+  return { match: nextMatch, events }
 }
 
 function createMatchFromPlayerDescriptors(roomCode, descriptors) {
@@ -551,7 +578,7 @@ function createMatchFromPlayerDescriptors(roomCode, descriptors) {
         itemIds: Array.isArray(d.itemIds) ? d.itemIds : [],
         shield: 0,
         cooldowns: [0, 0, 0, 0],
-        effects: { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0, immunityTurns: 0 },
+        effects: { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0, immunityTurns: 0, extraTurnsRemaining: 0, extraTurnChanceTurns: 0, extraTurnChancePct: 0 },
       }
     })
     .filter(Boolean)
@@ -1015,12 +1042,14 @@ io.on('connection', (socket) => {
       }
 
       const ensureEffects = (p) => {
-        p.effects = p.effects && typeof p.effects === 'object' ? p.effects : { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0, extraTurnsRemaining: 0 }
+        p.effects = p.effects && typeof p.effects === 'object' ? p.effects : { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0, extraTurnsRemaining: 0, extraTurnChanceTurns: 0, extraTurnChancePct: 0 }
         p.effects.dot = Array.isArray(p.effects.dot) ? p.effects.dot : []
         p.effects.hot = Array.isArray(p.effects.hot) ? p.effects.hot : []
         p.effects.dodgeAllTurns = Math.max(0, Math.floor(p.effects.dodgeAllTurns || 0))
         p.effects.stunTurns = Math.max(0, Math.floor(p.effects.stunTurns || 0))
         p.effects.extraTurnsRemaining = Math.max(0, Math.floor(p.effects.extraTurnsRemaining || 0))
+        p.effects.extraTurnChanceTurns = Math.max(0, Math.floor(p.effects.extraTurnChanceTurns || 0))
+        p.effects.extraTurnChancePct = Math.max(0, Math.min(1, Number(p.effects.extraTurnChancePct || 0)))
       }
 
       const targetEnemy = getPlayerByIndex(nextMatch, enemyIndex)
@@ -1189,9 +1218,11 @@ io.on('connection', (socket) => {
         })
       } else if (effectKind === 'buff_attack_and_speed') {
         const pct = Math.max(0, Math.min(1, Number(effect.attackUpPct || 0)))
+        const speedPct = Math.max(0, Math.min(1, Number(effect.speedUpPct || 0)))
         const turns = Math.max(1, Math.floor(effect.turns || 1))
         actorNext.effects.attack = { pct, turns }
-        actorNext.effects.extraTurnsRemaining = 1
+        actorNext.effects.extraTurnChanceTurns = turns
+        actorNext.effects.extraTurnChancePct = speedPct
         log.push({
           kind: 'skill',
           actorPlayerIndex: playerIndex,
