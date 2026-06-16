@@ -103,7 +103,7 @@ export const HEROES = {
         name: 'Pisngi Slam',
         description: 'Medium damage + stun (1 turn).',
         type: 'damage',
-        cooldown: 3,
+        cooldown: 5,
         effect: {
           kind: 'damage_and_stun',
           damage: 22,
