@@ -345,11 +345,6 @@ function App() {
       // Don't auto set isReady anymore, since we need 4 players with 2 per team
     }
 
-    const handleSwitchTeam = () => {
-      if (!socket) return
-      socket.emit('switch-team')
-    }
-
     function onRoomReady(payload) {
       setIsReady(true)
       if (payload?.roomCode) {
@@ -770,6 +765,11 @@ function App() {
     }
     socket.emit('player-ready', { heroId: selectedHeroId, itemIds: selectedItemIds })
     setStatus('Sending ready...')
+  }
+
+  const handleSwitchTeam = () => {
+    if (!socket) return
+    socket.emit('switch-team')
   }
 
   const myPlayerIndex = useMemo(() => {
