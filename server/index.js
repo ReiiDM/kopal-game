@@ -1675,6 +1675,19 @@ io.on('connection', (socket) => {
     socket.emit('match-updated', room.match)
   })
 
+  socket.on('send-taunt', ({ tauntText } = {}) => {
+    const code = socket.data.roomCode
+    if (!code || !rooms.has(code)) return
+    const room = rooms.get(code)
+    const playerIndex = room.match ? getPlayerIndexFromMatch(room.match, socket.id) : null
+    
+    io.to(code).emit('receive-taunt', {
+      socketId: socket.id,
+      playerIndex,
+      tauntText: tauntText?.toString().substring(0, 100) || '...'
+    })
+  })
+
   socket.on('disconnect', () => {
     leaveCurrentRoom(socket)
   })

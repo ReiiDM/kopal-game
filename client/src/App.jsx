@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { io } from 'socket.io-client'
 
+const QUICK_TAUNTS = [
+  'Iyak na lang! 😂',
+  'Talo ka naman boy 💀',
+  'Bawi next life! ⚰️',
+  'Lakas mo ah... joke lang 🤪',
+  'Galaw-galaw baka pumanaw 💀',
+  'Tsamba lang yan lods 🍀',
+  'Parang kulang sa gym 💪',
+  'Hina naman nyan! 🥱',
+  'Ez game, ez life 😎',
+  'paki-buhat nga ako 🏋️'
+]
+
 function App() {
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value))
@@ -122,7 +135,8 @@ function App() {
   const bgmIntervalRef = useRef(null)
   const bgmAudioCtxRef = useRef(null)
   const [musicEnabled, setMusicEnabled] = useState(() => {
-    return localStorage.getItem('kopal-bgm') === 'true'
+    const saved = localStorage.getItem('kopal-bgm')
+    return saved === null ? true : saved === 'true'
   })
   // Load win/loss from localStorage
   const [wins, setWins] = useState(() => {
@@ -134,10 +148,49 @@ function App() {
     return saved ? parseInt(saved, 10) : 0
   })
 
+  const audioCtxRef = useRef(null)
+
+  const resumeAudio = () => {
+    try {
+      // Lazy init/resume SFX context
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
+      }
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(e => console.error('SFX resume failed:', e))
+      }
+
+      // Lazy init/resume BGM context
+      if (!bgmAudioCtxRef.current) {
+        bgmAudioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
+      }
+      if (bgmAudioCtxRef.current && bgmAudioCtxRef.current.state === 'suspended') {
+        bgmAudioCtxRef.current.resume().catch(e => console.error('BGM resume failed:', e))
+      }
+
+      // Speech synthesis unlock
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(''))
+      }
+    } catch (e) {
+      console.error('Failed to unlock audio:', e)
+    }
+  }
+
+  const getSharedAudioContext = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume().catch(() => {})
+    }
+    return audioCtxRef.current
+  }
+
   // Sound effects with Web Audio API
   const playSound = (type) => {
     try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      const audioCtx = getSharedAudioContext()
       const oscillator = audioCtx.createOscillator()
       const gainNode = audioCtx.createGain()
       
@@ -204,20 +257,56 @@ function App() {
     }
   }
 
-  const speakMeme = (text, rate = 1.0, pitch = 1.0) => {
-    try {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel()
-        const utterance = new SpeechSynthesisUtterance(text)
-        utterance.lang = 'tl-PH'
-        utterance.rate = rate
-        utterance.pitch = pitch
-        window.speechSynthesis.speak(utterance)
-      }
-    } catch (e) {
-      console.error('Speech synthesis error:', e)
-    }
+  const [activeTaunts, setActiveTaunts] = useState({}) // { [socketId]: { text, id } }
+
+  const triggerSpeechBubble = (socketId, text) => {
+    if (!socketId) return
+    const id = `${Date.now()}-${Math.random()}`
+    setActiveTaunts((prev) => ({
+      ...prev,
+      [socketId]: { text, id }
+    }))
+    
+    // Clear after 2.5 seconds
+    setTimeout(() => {
+      setActiveTaunts((prev) => {
+        if (prev[socketId]?.id === id) {
+          const next = { ...prev }
+          delete next[socketId]
+          return next
+        }
+        return prev
+      })
+    }, 2500)
   }
+
+  // Refs to avoid stale closures in socket events
+  const matchStateRef = useRef(null)
+  useEffect(() => {
+    matchStateRef.current = matchState
+  }, [matchState])
+
+  const roomPlayersRef = useRef([])
+  useEffect(() => {
+    roomPlayersRef.current = roomPlayers
+  }, [roomPlayers])
+
+  // Global audio unlocker
+  useEffect(() => {
+    const handleGesture = () => {
+      resumeAudio()
+    }
+
+    window.addEventListener('click', handleGesture)
+    window.addEventListener('touchstart', handleGesture)
+    window.addEventListener('keydown', handleGesture)
+
+    return () => {
+      window.removeEventListener('click', handleGesture)
+      window.removeEventListener('touchstart', handleGesture)
+      window.removeEventListener('keydown', handleGesture)
+    }
+  }, [])
 
   const serverCandidates = useMemo(() => {
     const host = window.location.hostname
@@ -444,7 +533,10 @@ function App() {
               return newWins
             })
             setTimeout(() => {
-              speakMeme('panalo ako! ikaw, iyak na lang', 1.0, 1.1)
+              const winnerPlayer = payload.players?.find(p => p.playerIndex === winner)
+              if (winnerPlayer?.socketId) {
+                triggerSpeechBubble(winnerPlayer.socketId, 'Panalo ako! Iyak na lang! 😂')
+              }
             }, 800)
           } else {
             // Loss
@@ -454,7 +546,10 @@ function App() {
               return newLosses
             })
             setTimeout(() => {
-              speakMeme('talo ka naman boy', 0.95, 0.9)
+              const loserPlayer = payload.players?.find(p => p.playerIndex === (winner === 1 ? 2 : 1))
+              if (loserPlayer?.socketId) {
+                triggerSpeechBubble(loserPlayer.socketId, 'Talo ako... 💀')
+              }
             }, 800)
           }
         }
@@ -582,10 +677,11 @@ function App() {
               'Tara GYM!': 'tara gym! buhat tayo, tol!'
             }
             const speechText = nameMap[entry.name]
-            if (speechText) {
-              setTimeout(() => {
-                speakMeme(speechText, 1.05, 1.0)
-              }, 150)
+            if (speechText && entry.actorPlayerIndex) {
+              const actorPlayer = match?.players?.find(p => p.playerIndex === entry.actorPlayerIndex)
+              if (actorPlayer?.socketId) {
+                triggerSpeechBubble(actorPlayer.socketId, speechText)
+              }
             }
           }
         }
@@ -778,6 +874,40 @@ function App() {
       }
     }
 
+    function onReceiveTaunt(payload) {
+      if (!payload || !payload.socketId) return
+      
+      // Play a quick test sound
+      playSound('attack')
+
+      // Display speech bubble
+      triggerSpeechBubble(payload.socketId, payload.tauntText)
+
+      // Find sender name from matchStateRef or roomPlayersRef
+      let senderName = 'Someone'
+      const match = matchStateRef.current
+      const players = roomPlayersRef.current
+      if (match?.players) {
+        const p = match.players.find(x => x.socketId === payload.socketId)
+        if (p) senderName = p.heroName || `Player ${p.playerIndex}`
+      } else if (players) {
+        const p = players.find(x => x.socketId === payload.socketId)
+        if (p) {
+          senderName = p.socketId === socket.id ? 'You' : `Player (${p.team === 1 ? 'Team 1' : 'Team 2'})`
+        }
+      }
+
+      // Add to battle logs
+      const logLine = `${senderName}: "${payload.tauntText}"`
+      setBattleLogs((prev) => {
+        const next = [...prev, { id: `${Date.now()}-${Math.random()}`, text: `💬 ${logLine}` }]
+        return next.slice(-60)
+      })
+
+      // Also set status text
+      setStatus(logLine)
+    }
+
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
     socket.on('connect_error', onConnectError)
@@ -794,6 +924,7 @@ function App() {
     socket.on('match-cancelled', onMatchCancelled)
     socket.on('player-ready-saved', onPlayerReadySaved)
     socket.on('player-ready-state', onPlayerReadyState)
+    socket.on('receive-taunt', onReceiveTaunt)
 
     return () => {
       isActive = false
@@ -813,6 +944,7 @@ function App() {
       socket.off('match-cancelled', onMatchCancelled)
       socket.off('player-ready-saved', onPlayerReadySaved)
       socket.off('player-ready-state', onPlayerReadyState)
+      socket.off('receive-taunt', onReceiveTaunt)
     }
   }, [socket, serverCandidates, serverIndex])
 
@@ -985,20 +1117,22 @@ function App() {
 
   // BGM Player
   useEffect(() => {
-    if (!musicEnabled || page !== 'battle' || isMatchOver) {
+    if (!musicEnabled || isMatchOver) {
       if (bgmIntervalRef.current) {
         clearInterval(bgmIntervalRef.current)
         bgmIntervalRef.current = null
       }
       if (bgmAudioCtxRef.current) {
-        bgmAudioCtxRef.current.close()
+        bgmAudioCtxRef.current.close().catch(() => {})
         bgmAudioCtxRef.current = null
       }
       return
     }
 
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-    bgmAudioCtxRef.current = audioCtx
+    if (!bgmAudioCtxRef.current) {
+      bgmAudioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
+    }
+    const audioCtx = bgmAudioCtxRef.current
 
     // Simple 8-bit pentatonic bassline loop
     const notes = [
@@ -1011,7 +1145,7 @@ function App() {
 
     const interval = setInterval(() => {
       if (audioCtx.state === 'suspended') {
-        audioCtx.resume()
+        return
       }
       const freq = notes[step % notes.length]
       
@@ -1037,11 +1171,8 @@ function App() {
 
     return () => {
       clearInterval(interval)
-      if (bgmAudioCtxRef.current) {
-        bgmAudioCtxRef.current.close()
-      }
     }
-  }, [musicEnabled, page, isMatchOver])
+  }, [musicEnabled, isMatchOver])
 
   function handleNormalAttack() {
     if (!socket || !matchState) return
@@ -1087,7 +1218,7 @@ function App() {
         <header className="mb-10">
           <div className="flex items-center justify-between gap-4">
             <h1 className="text-3xl font-semibold tracking-tight">Kopal Battlefield</h1>
-            <div className="text-sm flex items-center gap-4">
+            <div className="text-sm flex items-center gap-3 flex-wrap">
               <button
                 type="button"
                 onClick={() => {
@@ -1103,6 +1234,16 @@ function App() {
               >
                 {musicEnabled ? '🎵 Music: On' : '🔇 Music: Off'}
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  resumeAudio()
+                  playSound('skill')
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-slate-800/40 text-slate-300 border-slate-700/40 hover:bg-slate-800 transition-all active:scale-95 duration-100"
+              >
+                🔊 Test Sound
+              </button>
               <span className="text-emerald-400 font-bold">🏆 {wins} Wins</span>
               <span className="text-slate-400 font-bold">💀 {losses} Losses</span>
             </div>
@@ -1115,6 +1256,30 @@ function App() {
                 : 'Create a room or join an existing one.'}
           </p>
         </header>
+
+        {roomCode && (
+          <div className="mb-6 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+              💬 Trash Talk / Quick Taunt React
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_TAUNTS.map((taunt) => (
+                <button
+                  key={taunt}
+                  type="button"
+                  onClick={() => {
+                    if (socket) {
+                      socket.emit('send-taunt', { tauntText: taunt })
+                    }
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-100 text-xs font-medium rounded-lg border border-slate-700 hover:border-slate-500 transition-all active:scale-95 duration-100"
+                >
+                  {taunt}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {page !== 'battle' && (
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm">
@@ -1204,8 +1369,16 @@ function App() {
                 <div className="text-sm font-semibold text-red-300 mb-2">🔴 Team 1 ({roomPlayers.filter(p => p.team === 1).length}/2)</div>
                 <div className="space-y-1">
                   {roomPlayers.filter(p => p.team === 1).map(p => (
-                    <div key={p.socketId} className={`text-sm ${p.isReady ? 'text-emerald-300' : 'text-slate-400'}`}>
-                      {p.isReady ? '✅ Ready' : '⏳ Waiting...'} {p.socketId === socketId ? '(You)' : ''}
+                    <div key={p.socketId} className="relative flex items-center justify-between py-1">
+                      <div className={`text-sm ${p.isReady ? 'text-emerald-300' : 'text-slate-400'}`}>
+                        {p.isReady ? '✅ Ready' : '⏳ Waiting...'} {p.socketId === socketId ? '(You)' : ''}
+                      </div>
+                      {activeTaunts[p.socketId] && (
+                        <div className="absolute right-0 top-1/2 transform translate-x-[110%] -translate-y-1/2 z-30 bg-white text-slate-950 px-2 py-1 rounded-lg text-xs font-bold border border-slate-950 whitespace-nowrap shadow-lg animate-pulse">
+                          {activeTaunts[p.socketId].text}
+                          <div className="absolute left-0 top-1/2 transform -translate-x-full -translate-y-1/2 w-0 h-0 border-y-4 border-y-transparent border-r-4 border-r-white" />
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1216,8 +1389,16 @@ function App() {
                 <div className="text-sm font-semibold text-blue-300 mb-2">🔵 Team 2 ({roomPlayers.filter(p => p.team === 2).length}/2)</div>
                 <div className="space-y-1">
                   {roomPlayers.filter(p => p.team === 2).map(p => (
-                    <div key={p.socketId} className={`text-sm ${p.isReady ? 'text-emerald-300' : 'text-slate-400'}`}>
-                      {p.isReady ? '✅ Ready' : '⏳ Waiting...'} {p.socketId === socketId ? '(You)' : ''}
+                    <div key={p.socketId} className="relative flex items-center justify-between py-1">
+                      <div className={`text-sm ${p.isReady ? 'text-emerald-300' : 'text-slate-400'}`}>
+                        {p.isReady ? '✅ Ready' : '⏳ Waiting...'} {p.socketId === socketId ? '(You)' : ''}
+                      </div>
+                      {activeTaunts[p.socketId] && (
+                        <div className="absolute right-0 top-1/2 transform translate-x-[110%] -translate-y-1/2 z-30 bg-white text-slate-950 px-2 py-1 rounded-lg text-xs font-bold border border-slate-950 whitespace-nowrap shadow-lg animate-pulse">
+                          {activeTaunts[p.socketId].text}
+                          <div className="absolute left-0 top-1/2 transform -translate-x-full -translate-y-1/2 w-0 h-0 border-y-4 border-y-transparent border-r-4 border-r-white" />
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1554,6 +1735,14 @@ function App() {
                           boxShadow: '0 0 16px 4px rgba(234,179,8,0.6)'
                         } : {}}
                       >
+                        {/* Battle Speech Bubble */}
+                        {activeTaunts[p.socketId] && (
+                          <div className="absolute -top-14 left-1/2 transform -translate-x-1/2 z-30 animate-bounce bg-white text-slate-950 px-3 py-1.5 rounded-xl text-xs font-black shadow-2xl border-2 border-slate-950 whitespace-nowrap">
+                            {activeTaunts[p.socketId].text}
+                            <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-white" />
+                          </div>
+                        )}
+
                         {/* Full-card stun yellow tint overlay */}
                         {isStunned && (
                           <div
