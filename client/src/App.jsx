@@ -1095,7 +1095,10 @@ function App() {
                         </div>
 
                         <div className="flex-1">
-                          <span className="font-medium text-base">{h.name}</span>
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="font-medium text-base">{h.name}</span>
+                            {h.role && <span className="text-xs text-slate-500 font-normal">— {h.role}</span>}
+                          </div>
                           <div className="text-xs text-slate-400">❤️ {h.baseHP} HP</div>
                         </div>
                         {selectedHeroId === h.id && (

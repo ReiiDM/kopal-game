@@ -2,6 +2,7 @@ export const HEROES = {
   tan: {
     id: 'tan',
     name: 'Tan',
+    role: 'Fighter',
     baseHP: 120,
     normalAttack: {
       name: 'Palo-Palo Lang',
@@ -74,6 +75,7 @@ export const HEROES = {
   damara: {
     id: 'damara',
     name: 'Damara',
+    role: 'Tank',
     baseHP: 140,
     normalAttack: {
       name: 'Suntok na Makunat',
@@ -141,6 +143,7 @@ export const HEROES = {
   azel: {
     id: 'azel',
     name: 'Azel',
+    role: 'Assassin',
     baseHP: 120,
     normalAttack: {
       name: 'Singit Hit',
@@ -212,6 +215,7 @@ export const HEROES = {
   ruis: {
     id: 'ruis',
     name: 'Ruis',
+    role: 'Burst',
     baseHP: 130,
     normalAttack: {
       name: 'Trip Lang',
@@ -288,6 +292,7 @@ export const HEROES = {
   chano: {
     id: 'chano',
     name: 'Chano',
+    role: 'Sleeper Carry',
     baseHP: 105,
     normalAttack: {
       name: 'Tamad na Suntok',
