@@ -141,7 +141,7 @@ export const HEROES = {
   azel: {
     id: 'azel',
     name: 'Azel',
-    baseHP: 110,
+    baseHP: 120,
     normalAttack: {
       name: 'Singit Hit',
       description: 'Low damage na mabilis. Walang cooldown.',
@@ -161,7 +161,7 @@ export const HEROES = {
         effect: {
           kind: 'damage_with_miss',
           damage: 34,
-          missChance: 0.2,
+          missChance: 0.15,
           target: 'enemy',
           notes: 'High risk, high reward.',
         },
@@ -170,7 +170,7 @@ export const HEROES = {
         name: 'Liko Liko',
         description: 'Dodge next attack.',
         type: 'defense',
-        cooldown: 3,
+        cooldown: 2,
         effect: {
           kind: 'evasion',
           chance: 1,
@@ -181,26 +181,26 @@ export const HEROES = {
       },
       {
         name: 'Gulat Ka No?',
-        description: 'Medium damage + enemy cooldown +1.',
+        description: 'Medium damage + enemy cooldown +2.',
         type: 'utility',
         cooldown: 2,
         effect: {
           kind: 'damage_and_cooldown_increase',
           damage: 20,
-          increaseEnemyCooldownBy: 1,
+          increaseEnemyCooldownBy: 2,
           target: 'enemy',
-          notes: 'Adds +1 to all enemy cooldown counters.',
+          notes: 'Adds +2 to all enemy cooldown counters.',
         },
       },
       {
         name: 'Walang Makaka-Tama',
-        description: 'Dodge all attacks for 1 turn + counter small damage.',
+        description: 'Dodge all attacks for 1 turn + counter damage.',
         type: 'ultimate',
         cooldown: 4,
         effect: {
           kind: 'dodge_all_and_counter',
           dodgeAllTurns: 1,
-          counterDamage: 10,
+          counterDamage: 20,
           counterTurns: 1,
           target: 'self',
           notes: 'Defensive ultimate; counters when hit.',
