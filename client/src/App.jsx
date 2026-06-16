@@ -435,6 +435,7 @@ function App() {
       if (ev.kind === 'item-cooldown-reduce') return `${name}'s cooldown reduced (Energy Drink)`
       if (ev.kind === 'item-random') return `${name} got a random buff (Pamahiin Charm)`
       if (ev.kind === 'stun-skip') return `${name} is stunned and skips the turn`
+      if (ev.kind === 'extra-turn') return `${name} gets an EXTRA TURN!`
       return null
     }
 

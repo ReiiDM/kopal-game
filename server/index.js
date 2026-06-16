@@ -461,6 +461,48 @@ function maybeFinalizeMatch(match) {
 
 function advanceTurn(match) {
   const currentTurnPlayerIndex = match.currentTurnPlayerIndex ?? match.activePlayerIndex
+  const currentPlayer = getPlayerByIndex(match, currentTurnPlayerIndex)
+  
+  // Check if current player has extra turns left
+  if (currentPlayer?.effects?.extraTurnsRemaining > 0) {
+    // Use one extra turn
+    let nextMatch = {
+      ...match,
+      turnCount: (match.turnCount ?? match.turn ?? 1) + 1,
+      lastTurnEndedAt: Date.now(),
+      lastTurnEndedBy: currentTurnPlayerIndex,
+    }
+    // Update player to use extra turn
+    const nextPlayers = nextMatch.players.map(p => {
+      if (p.playerIndex === currentTurnPlayerIndex) {
+        return {
+          ...p,
+          effects: {
+            ...p.effects,
+            extraTurnsRemaining: Math.max(0, p.effects.extraTurnsRemaining - 1)
+          }
+        }
+      }
+      return p
+    })
+    nextMatch.players = nextPlayers
+    
+    // Start the extra turn
+    const tick = startTurnTick(nextMatch, currentTurnPlayerIndex)
+    nextMatch = tick.match
+    
+    // Check stunned
+    const stillCurrentPlayer = getPlayerByIndex(nextMatch, currentTurnPlayerIndex)
+    const stunned = Math.max(0, Math.floor(stillCurrentPlayer?.effects?.stunTurns || 0))
+    if (stunned > 0) {
+      const skip = advanceTurn(nextMatch)
+      return { match: skip.match, events: [...tick.events, { kind: 'stun-skip', playerIndex: currentTurnPlayerIndex }, ...skip.events] }
+    }
+    
+    return { match: nextMatch, events: [...tick.events, { kind: 'extra-turn', playerIndex: currentTurnPlayerIndex }] }
+  }
+  
+  // No extra turns: proceed to next player
   const players = match.players || []
   const playerIndices = players.map(p => p.playerIndex).sort((a, b) => a - b)
   
@@ -973,11 +1015,12 @@ io.on('connection', (socket) => {
       }
 
       const ensureEffects = (p) => {
-        p.effects = p.effects && typeof p.effects === 'object' ? p.effects : { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0 }
+        p.effects = p.effects && typeof p.effects === 'object' ? p.effects : { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0, extraTurnsRemaining: 0 }
         p.effects.dot = Array.isArray(p.effects.dot) ? p.effects.dot : []
         p.effects.hot = Array.isArray(p.effects.hot) ? p.effects.hot : []
         p.effects.dodgeAllTurns = Math.max(0, Math.floor(p.effects.dodgeAllTurns || 0))
         p.effects.stunTurns = Math.max(0, Math.floor(p.effects.stunTurns || 0))
+        p.effects.extraTurnsRemaining = Math.max(0, Math.floor(p.effects.extraTurnsRemaining || 0))
       }
 
       const targetEnemy = getPlayerByIndex(nextMatch, enemyIndex)
@@ -1148,6 +1191,7 @@ io.on('connection', (socket) => {
         const pct = Math.max(0, Math.min(1, Number(effect.attackUpPct || 0)))
         const turns = Math.max(1, Math.floor(effect.turns || 1))
         actorNext.effects.attack = { pct, turns }
+        actorNext.effects.extraTurnsRemaining = 1
         log.push({
           kind: 'skill',
           actorPlayerIndex: playerIndex,
