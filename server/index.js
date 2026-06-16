@@ -44,7 +44,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const clientDistPath = path.join(__dirname, '../client/dist')
+const clientDistPath = path.resolve(__dirname, '../client/dist')
 app.use(express.static(clientDistPath))
 
 function generateRoomCode() {
@@ -572,6 +572,16 @@ io.on('connection', (socket) => {
     socket.to(code).emit('player-joined', { roomCode: code })
 
     broadcastRoomState(code)
+    
+    // Send current match state if it exists
+    if (room.match) {
+      socket.emit('match-started', room.match)
+    }
+    
+    // Send player ready state if applicable
+    const readyCount = [...room.players.values()].filter((p) => p.isReady).length
+    socket.emit('player-ready-state', { roomCode: code, readyCount, playerCount: room.players.size })
+
     if (room.players.size === 2) {
       io.to(code).emit('room-ready', { roomCode: code })
     }
@@ -664,45 +674,18 @@ io.on('connection', (socket) => {
       return
     }
 
-    const existing = room.match
-    const existingPlayers = Array.isArray(existing?.players) ? existing.players : null
-    let descriptors = null
-
-    if (existingPlayers && existingPlayers.length === 2) {
-      const stillConnected = existingPlayers.every((p) => room.players.has(p.socketId))
-      if (!stillConnected) {
-        socket.emit('room-error', { error: 'A player is missing' })
-        return
-      }
-      descriptors = existingPlayers.map((p) => ({
-        playerIndex: p.playerIndex,
-        socketId: p.socketId,
-        heroId: p.heroId,
-        itemIds: p.itemIds,
-      }))
-    } else {
-      const playerEntries = [...room.players.entries()].sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))
-      const bothReady = playerEntries.length === 2 && playerEntries.every(([, p]) => p?.setup?.heroId && Array.isArray(p?.setup?.itemIds) && p.setup.itemIds.length === 3)
-      if (!bothReady) {
-        socket.emit('room-error', { error: 'Both players must be ready' })
-        return
-      }
-      descriptors = playerEntries.map(([id, p], index) => ({
-        playerIndex: index + 1,
-        socketId: id,
-        heroId: p.setup.heroId,
-        itemIds: p.setup.itemIds,
-      }))
+    // Reset match and all players' ready states
+    room.match = null
+    for (const [id, player] of room.players.entries()) {
+      room.players.set(id, {
+        ...player,
+        isReady: false,
+        readyAt: undefined,
+      })
     }
 
-    const matchState = createMatchFromPlayerDescriptors(code, descriptors)
-    if (!matchState) {
-      socket.emit('room-error', { error: 'Failed to start match' })
-      return
-    }
-
-    room.match = matchState
-    io.to(code).emit('match-started', matchState)
+    // Notify all players in the room to go back to setup
+    io.to(code).emit('play-again-init')
   })
 
   socket.on('player-action', ({ kind, skillIndex } = {}) => {

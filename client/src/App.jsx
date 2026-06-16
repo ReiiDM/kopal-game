@@ -201,6 +201,26 @@ function App() {
 
   const [socket, setSocket] = useState(null)
 
+  // Persist room code in localStorage
+  useEffect(() => {
+    if (roomCode) {
+      localStorage.setItem('kopal-room-code', roomCode)
+    } else {
+      localStorage.removeItem('kopal-room-code')
+    }
+  }, [roomCode])
+
+  // Auto-rejoin room on page load
+  useEffect(() => {
+    if (!socket || !isConnected) return
+    const savedRoomCode = localStorage.getItem('kopal-room-code')
+    if (savedRoomCode && !roomCode) {
+      // Try to rejoin the saved room
+      setIsLoading(true)
+      socket.emit('join-room', { roomCode: savedRoomCode })
+    }
+  }, [socket, isConnected, roomCode])
+
   useEffect(() => {
     const s = io(serverUrl, { path: '/socket.io', autoConnect: true })
     setSocket(s)
@@ -344,6 +364,19 @@ function App() {
       setHasSentReady(false)
       setActionPending(false)
       setStatus(payload?.error || 'Room error')
+    }
+
+    function onPlayAgainInit() {
+      // Reset local state for setup, keep room code
+      setMatchState(null)
+      setActionPending(false)
+      setBattleLogs([])
+      setSelectedHeroId('')
+      setSelectedItemIds([])
+      setHasSentReady(false)
+      setSetupStep(1)
+      setBattleEffects([])
+      setStatus('Ready to play again!')
     }
 
     function onMatchStarted(payload) {
@@ -602,6 +635,7 @@ function App() {
     socket.on('room-ready', onRoomReady)
     socket.on('player-left', onPlayerLeft)
     socket.on('room-error', onRoomError)
+    socket.on('play-again-init', onPlayAgainInit)
     socket.on('match-started', onMatchStarted)
     socket.on('match-updated', onMatchUpdated)
     socket.on('action-resolved', onActionResolved)
@@ -620,6 +654,7 @@ function App() {
       socket.off('room-ready', onRoomReady)
       socket.off('player-left', onPlayerLeft)
       socket.off('room-error', onRoomError)
+      socket.off('play-again-init', onPlayAgainInit)
       socket.off('match-started', onMatchStarted)
       socket.off('match-updated', onMatchUpdated)
       socket.off('action-resolved', onActionResolved)
@@ -665,6 +700,11 @@ function App() {
     setBattleLogs([])
     setSetupStep(1)
     setStatus('Left room.')
+  }
+
+  function handlePlayAgain() {
+    if (!socket) return
+    socket.emit('play-again')
   }
 
   function toggleItem(id) {
