@@ -579,6 +579,11 @@ app.get('/api/game-data', (_req, res) => {
   res.json({ heroes: HEROES, items: GLOBAL_ITEMS })
 })
 
+// Catch-all route for client-side routing
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(clientDistPath, 'index.html'))
+})
+
 io.on('connection', (socket) => {
   socket.emit('socket-ready', { id: socket.id })
 
