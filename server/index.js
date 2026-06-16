@@ -371,8 +371,11 @@ function startTurnTick(match, currentPlayerIndex) {
   const immunityTurns = Math.max(0, Math.floor(effects.immunityTurns || 0))
   effects.immunityTurns = immunityTurns > 0 ? immunityTurns - 1 : 0
 
-  const stunTurns = Math.max(0, Math.floor(effects.stunTurns || 0))
-  effects.stunTurns = stunTurns > 0 ? stunTurns - 1 : 0
+  // NOTE: stunTurns is intentionally NOT decremented here.
+  // advanceTurn checks stunTurns AFTER startTurnTick runs and decrements it there
+  // when it actually skips the player's turn. Decrementing here would zero it out
+  // before the skip-check can see it, breaking the Old Nokia stun mid-battle.
+  effects.stunTurns = Math.max(0, Math.floor(effects.stunTurns || 0))
 
   // Handle extra turn chance
   let extraTurnThisTurn = false
@@ -517,6 +520,8 @@ function advanceTurn(match) {
     const stillCurrentPlayer = getPlayerByIndex(nextMatch, currentTurnPlayerIndex)
     const stunned = Math.max(0, Math.floor(stillCurrentPlayer?.effects?.stunTurns || 0))
     if (stunned > 0) {
+      // Consume one stun turn now that we've confirmed the skip
+      stillCurrentPlayer.effects.stunTurns = stunned - 1
       const skip = advanceTurn(nextMatch)
       return { match: skip.match, events: [...events, { kind: 'stun-skip', playerIndex: currentTurnPlayerIndex }, ...skip.events] }
     }
@@ -555,6 +560,8 @@ function advanceTurn(match) {
   const current = getPlayerByIndex(nextMatch, nextPlayerIndex)
   const stunned = Math.max(0, Math.floor(current?.effects?.stunTurns || 0))
   if (stunned > 0) {
+    // Consume one stun turn now that we've confirmed the skip
+    current.effects.stunTurns = stunned - 1
     const skip = advanceTurn(nextMatch)
     return { match: skip.match, events: [...events, { kind: 'stun-skip', playerIndex: nextPlayerIndex }, ...skip.events] }
   }
