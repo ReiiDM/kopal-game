@@ -102,6 +102,7 @@ function App() {
   const [setupStep, setSetupStep] = useState(1) // 1 = hero, 2 = items
   const [battleEffects, setBattleEffects] = useState([]) // To show temporary effects on characters
   const [isSkillModalOpen, setIsSkillModalOpen] = useState(false) // To show skill detail modal
+  const [showWinnerModal, setShowWinnerModal] = useState(false) // To control when winner modal appears
   // Load win/loss from localStorage
   const [wins, setWins] = useState(() => {
     const saved = localStorage.getItem('kopal-wins')
@@ -315,6 +316,7 @@ function App() {
       setActionPending(false)
       setBattleLogs([])
       setSetupStep(1)
+      setShowWinnerModal(false)
       setStatus('Room created. Share the code.')
     }
 
@@ -330,6 +332,7 @@ function App() {
       setActionPending(false)
       setBattleLogs([])
       setSetupStep(1)
+      setShowWinnerModal(false)
       setStatus(`Joined room ${payload?.roomCode || ''}.`)
     }
 
@@ -355,6 +358,7 @@ function App() {
       setMatchState(null)
       setActionPending(false)
       setBattleLogs([])
+      setShowWinnerModal(false)
       setStatus('A player left the room.')
     }
 
@@ -376,6 +380,7 @@ function App() {
       setHasSentReady(false)
       setSetupStep(1)
       setBattleEffects([])
+      setShowWinnerModal(false)
       setStatus('Ready to play again!')
     }
 
@@ -383,6 +388,7 @@ function App() {
       setMatchState(payload || null)
       setActionPending(false)
       setBattleLogs([])
+      setShowWinnerModal(false)
       setStatus('Match started.')
     }
 
@@ -604,6 +610,7 @@ function App() {
       setMatchState(null)
       setActionPending(false)
       setBattleLogs([])
+      setShowWinnerModal(false)
       if (payload?.reason) {
         setStatus(`Match cancelled: ${payload.reason}`)
       } else {
@@ -699,6 +706,7 @@ function App() {
     setActionPending(false)
     setBattleLogs([])
     setSetupStep(1)
+    setShowWinnerModal(false)
     setStatus('Left room.')
   }
 
@@ -706,11 +714,13 @@ function App() {
     if (!socket || !roomCode) return
     setActionPending(false)
     setBattleLogs([])
+    setShowWinnerModal(false)
     setStatus('Starting rematch...')
     socket.emit('play-again')
   }
 
   function handleGoToMainMenu() {
+    setShowWinnerModal(false)
     handleLeaveRoom()
   }
 
@@ -724,6 +734,7 @@ function App() {
     setSelectedItemIds([])
     setHasSentReady(false)
     setSetupStep(1)
+    setShowWinnerModal(false)
     setStatus('Back to character selection!')
     // Also reset server side (send play again)
     socket.emit('play-again')
@@ -781,6 +792,21 @@ function App() {
   const turnNumber = matchState?.turnCount ?? matchState?.turn ?? 1
   const turnDamageBoostPct = turnNumber >= 8 ? 0.2 : turnNumber >= 6 ? 0.1 : 0
   const page = matchState ? 'battle' : roomCode ? 'setup' : 'lobby'
+
+  // Effect to delay showing winner modal
+  useEffect(() => {
+    if (isMatchOver) {
+      // Wait 2 seconds then show modal
+      const timeout = setTimeout(() => {
+        setShowWinnerModal(true)
+      }, 2000)
+      // Cleanup timeout
+      return () => clearTimeout(timeout)
+    } else {
+      // If match is not over, hide modal
+      setShowWinnerModal(false)
+    }
+  }, [isMatchOver])
 
   function handleNormalAttack() {
     if (!socket || !matchState) return
@@ -1595,7 +1621,7 @@ function App() {
 
         {/* Winner Modal Overlay */}
         {isMatchOver && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm overflow-hidden">
+          <div className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm overflow-hidden transition-opacity duration-500 ${showWinnerModal ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
             {/* Confetti */}
             <div className="absolute inset-0 pointer-events-none">
               {[...Array(20)].map((_, i) => (
@@ -1613,7 +1639,7 @@ function App() {
               ))}
             </div>
             
-            <div className="relative max-w-md w-full mx-4">
+            <div className={`relative max-w-md w-full mx-4 transition-all duration-500 ${showWinnerModal ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}>
               {/* Background Effects */}
               <div className="absolute -inset-1.5 bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600 rounded-2xl blur-lg opacity-75"></div>
               
