@@ -1783,18 +1783,18 @@ function App() {
 
         {page === 'battle' ? (
           <>
-            <section className={`flex-1 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-6 pb-28 md:pb-6 mt-2 sm:mt-4 transition-all duration-300 ${isShaking ? 'animate-shake' : ''}`}>
-              <div className="grid gap-6">
-                <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-sm font-semibold">
+            <section className={`flex-1 overflow-hidden md:overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/40 p-2 sm:p-4 md:p-6 pb-24 md:pb-6 mt-1 md:mt-4 transition-all duration-300 ${isShaking ? 'animate-shake' : ''}`}>
+              <div className="grid gap-2 md:gap-6">
+                <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-2 sm:p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-1 sm:gap-3">
+                    <div className="text-xs sm:text-sm font-semibold">
                       Turn {turnNumber} • {formatPlayerLabel(currentTurnPlayerIndex, (matchState.players || []).find(p => p.playerIndex === currentTurnPlayerIndex)?.team)}'s turn
                       {isMatchOver ? ' • match over' : ''}
                     </div>
-                    <div className="text-xs text-slate-300">
-                      {myPlayerIndex ? `You are ${formatPlayerLabel(myPlayerIndex, (matchState.players || []).find(p => p.playerIndex === myPlayerIndex)?.team)}` : ''}
-                      {isMyTurn && !isMatchOver ? ' • your move' : ''}
-                      {actionPending ? ' • resolving…' : ''}
+                    <div className="text-[10px] sm:text-xs text-slate-300">
+                      {myPlayerIndex ? `You: ${formatPlayerLabel(myPlayerIndex, (matchState.players || []).find(p => p.playerIndex === myPlayerIndex)?.team)}` : ''}
+                      {isMyTurn && !isMatchOver ? ' \u2022 your move' : ''}
+                      {actionPending ? ' \u2022 resolving\u2026' : ''}
                     </div>
                   </div>
                   {turnDamageBoostPct > 0 ? (
@@ -1804,8 +1804,8 @@ function App() {
                   ) : null}
                 </div>
 
-                {/* Players in responsive layout (1 column mobile, 4 columns desktop) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Players: 2-col on mobile (2×2 grid), 4-col on lg */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4">
                   {(matchState.players || []).map((p) => {
                     if (!p) return null
                     const isSelf = p.socketId === socketId
@@ -1826,7 +1826,7 @@ function App() {
                     return (
                       <div
                         key={p.playerIndex}
-                        className={`relative rounded-lg border bg-slate-950/30 p-4 transition-all duration-300 ${
+                        className={`relative rounded-lg border bg-slate-950/30 p-2 sm:p-4 transition-all duration-300 ${
                           isStunned
                             ? 'border-yellow-400'
                             : isCurrentTurn
@@ -1869,10 +1869,10 @@ function App() {
                           ))}
                         </div>
                         
-                        {/* Hero Image with stun overlay OUTSIDE overflow-hidden */}
-                        <div className="flex justify-center mb-3">
+                        {/* Hero Image - compact on mobile */}
+                        <div className="flex justify-center mb-1 sm:mb-3">
                           <div className="relative">
-                            <div className={`w-20 h-20 rounded-full border-4 overflow-hidden bg-slate-800 flex items-center justify-center ${
+                            <div className={`w-12 h-12 sm:w-20 sm:h-20 rounded-full border-2 sm:border-4 overflow-hidden bg-slate-800 flex items-center justify-center ${
                               isStunned ? 'border-yellow-400' : 'border-slate-700'
                             }`}>
                               <img 
@@ -1946,21 +1946,21 @@ function App() {
                           </div>
                         )}
 
-                        <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center justify-between gap-1">
                           <div className="min-w-0">
-                            <div className="text-sm font-semibold">
+                            <div className="text-[10px] sm:text-sm font-semibold leading-tight truncate">
                               {formatPlayerLabel(p.playerIndex)} {isSelf ? '(You)' : ''}
                             </div>
-                            <div className="truncate text-xs text-slate-300">{p.heroName || '—'}</div>
+                            <div className="truncate text-[10px] sm:text-xs text-slate-400">{p.heroName || '—'}</div>
                           </div>
-                          <div className="text-right text-xs text-slate-300 font-mono">
-                            <span className={hpPct < 30 ? 'text-red-400 font-bold' : 'text-emerald-400'}>
-                              HP {Math.max(0, p.hp || 0)}/{Math.max(1, p.baseHP || 1)}
+                          <div className="text-right font-mono flex-shrink-0">
+                            <span className={`text-[10px] sm:text-xs ${hpPct < 30 ? 'text-red-400 font-bold' : 'text-emerald-400'}`}>
+                              {Math.max(0, p.hp || 0)}
                             </span>
-                            {p.shield ? <span className="ml-2 text-sky-400">🛡️ {p.shield}</span> : ''}
+                            {p.shield ? <span className="ml-1 text-[10px] sm:text-xs text-sky-400">🛡️{p.shield}</span> : ''}
                           </div>
                         </div>
-                        <div className="mt-3 h-3 overflow-hidden rounded-full border border-slate-800 bg-slate-900/40">
+                        <div className="mt-1 sm:mt-3 h-2 sm:h-3 overflow-hidden rounded-full border border-slate-800 bg-slate-900/40">
                           <div className="flex h-full w-full">
                             <div className="h-full transition-all duration-500" 
                                  style={{ 
@@ -2029,9 +2029,9 @@ function App() {
                   })}
                 </div>
 
-                {/* Target selection (for 2v2) */}
+                {/* Target selection (for 2v2) — desktop only */}
                 {enemyPlayers.length > 1 && (
-                  <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4 mb-4">
+                  <div className="hidden md:block rounded-lg border border-slate-800 bg-slate-950/30 p-4 mb-4">
                     <div className="text-sm font-semibold mb-3">Select Target</div>
                     <div className="grid grid-cols-2 gap-3">
                       {enemyPlayers.map(p => (
@@ -2138,28 +2138,6 @@ function App() {
                   ) : null}
                 </div>
 
-                {/* Trash Talk Panel - visible on battle page below actions */}
-                <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
-                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                    💬 Trash Talk / Quick Taunt React
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {QUICK_TAUNTS.map((taunt) => (
-                      <button
-                        key={taunt}
-                        type="button"
-                        onClick={() => {
-                          if (socket) {
-                            socket.emit('send-taunt', { tauntText: taunt })
-                          }
-                        }}
-                        className="px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-100 text-xs font-medium rounded-lg border border-slate-700 hover:border-slate-500 transition-all active:scale-95 duration-100"
-                      >
-                        {taunt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
 
               </div>
             </section>
