@@ -1836,58 +1836,9 @@ function App() {
                     return (
                       <div
                         key={p.playerIndex}
-                        className={`relative rounded-lg border overflow-hidden transition-all duration-300 ${
-                          isStunned
-                            ? 'border-yellow-400'
-                            : isCurrentTurn
-                              ? `${teamColor} ring-2 ring-indigo-500`
-                              : teamColor
-                        }`}
-                        style={{
-                          aspectRatio: '3/4',
-                          ...(isStunned ? {
-                            animation: 'stunBorder 0.9s ease-in-out infinite',
-                            boxShadow: '0 0 16px 4px rgba(234,179,8,0.6)'
-                          } : {})
-                        }}
+                        className="relative"
+                        style={{ aspectRatio: '3/4' }}
                       >
-                        {/* Hero image fills the full card */}
-                        <img
-                          src={heroImagePath}
-                          alt={p.heroName || 'Hero'}
-                          className="absolute inset-0 w-full h-full object-cover object-top"
-                          style={isStunned ? { filter: 'brightness(0.5) saturate(0.3)' } : {}}
-                          onError={(e) => {
-                            e.target.src = `/images/${p.heroId}.png`
-                            e.target.onerror = (e2) => {
-                              e2.target.src = placeholderImage
-                              e2.target.onerror = (e3) => {
-                                e3.target.style.display = 'none'
-                              }
-                            }
-                          }}
-                        />
-
-                        {/* Dark gradient overlay — bottom 60% for readability */}
-                        <div className="absolute inset-0 pointer-events-none"
-                          style={{ background: 'linear-gradient(to top, rgba(2,6,23,0.95) 0%, rgba(2,6,23,0.6) 45%, rgba(2,6,23,0.1) 75%, transparent 100%)' }}
-                        />
-
-                        {/* Stun yellow tint overlay */}
-                        {isStunned && (
-                          <div
-                            className="absolute inset-0 pointer-events-none z-10"
-                            style={{ background: 'rgba(234,179,8,0.18)', animation: 'stunFlicker 0.9s ease-in-out infinite' }}
-                          />
-                        )}
-
-                        {/* ⚡ Stun badge center */}
-                        {isStunned && (
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-                            <span style={{ fontSize: '2.5rem', lineHeight: 1, filter: 'drop-shadow(0 0 8px rgba(234,179,8,1))', animation: 'stunFlicker 0.8s ease-in-out infinite' }}>⚡</span>
-                          </div>
-                        )}
-
                         {/* Battle Speech Bubble */}
                         {activeTaunts[p.socketId] && (
                           <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 z-30 animate-bounce bg-white text-slate-950 px-2 py-1 rounded-xl text-[10px] font-black shadow-2xl border-2 border-slate-950 whitespace-nowrap">
@@ -1896,95 +1847,146 @@ function App() {
                           </div>
                         )}
 
-                        {/* Item icons — top right */}
-                        <div className="absolute top-1.5 right-1.5 flex gap-0.5 flex-wrap justify-end max-w-[60px] z-20">
-                          {Array.isArray(p.itemIds) && p.itemIds.map((itemId) => (
-                            <div key={itemId} className="w-5 h-5 rounded border border-slate-600/60 overflow-hidden bg-slate-800/80 flex items-center justify-center">
-                              <img src={getItemImageUrl(itemId)} alt="" className="w-full h-full object-cover" />
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Damage / heal float numbers */}
-                        {playerEffects.length > 0 && (
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-                            <div className="flex flex-col items-center gap-1">
-                              {playerEffects.map((effect, i) => {
-                                const colors = { damage: '#f87171', heal: '#4ade80', shield: '#38bdf8', miss: '#fde68a', dodge: '#fde68a', stun: '#fde047' }
-                                const color = colors[effect.type] || '#fff'
-                                return (
-                                  <div key={effect.id} style={{
-                                    color, fontWeight: 'bold',
-                                    fontSize: effect.type === 'stun' ? '1rem' : '1.25rem',
-                                    textShadow: `0 0 8px ${color}, 0 2px 4px rgba(0,0,0,0.8)`,
-                                    animation: 'floatUp 1.5s ease-out forwards',
-                                    animationDelay: `${i * 0.06}s`,
-                                    opacity: 0, whiteSpace: 'nowrap'
-                                  }}>
-                                    {effect.text}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* "Your turn" glow top strip */}
-                        {isCurrentTurn && !isStunned && (
-                          <div className="absolute top-0 left-0 right-0 h-1 z-20"
-                            style={{ background: 'linear-gradient(to right, transparent, rgba(99,102,241,0.9), transparent)' }}
+                        <div
+                          className={`w-full h-full rounded-lg border overflow-hidden transition-all duration-300 ${
+                            isStunned
+                              ? 'border-yellow-400'
+                              : isCurrentTurn
+                                ? `${teamColor} ring-2 ring-indigo-500`
+                                : teamColor
+                          }`}
+                          style={isStunned ? {
+                            animation: 'stunBorder 0.9s ease-in-out infinite',
+                            boxShadow: '0 0 16px 4px rgba(234,179,8,0.6)'
+                          } : {}}
+                        >
+                          {/* Hero image fills the full card */}
+                          <img
+                            src={heroImagePath}
+                            alt={p.heroName || 'Hero'}
+                            className="absolute inset-0 w-full h-full object-cover object-top"
+                            style={isStunned ? { filter: 'brightness(0.5) saturate(0.3)' } : {}}
+                            onError={(e) => {
+                              e.target.src = `/images/${p.heroId}.png`
+                              e.target.onerror = (e2) => {
+                                e2.target.src = placeholderImage
+                                e2.target.onerror = (e3) => {
+                                  e3.target.style.display = 'none'
+                                }
+                              }
+                            }}
                           />
-                        )}
 
-                        {/* Stats overlay — pinned to bottom */}
-                        <div className="absolute bottom-0 left-0 right-0 z-20 px-2 pb-2 pt-1">
-                          {/* Name row */}
-                          <div className="flex items-center justify-between gap-1 mb-1">
-                            <div className="min-w-0">
-                              <div className="text-[10px] sm:text-xs font-bold text-white leading-tight truncate drop-shadow">
-                                {p.heroName || '—'} {isSelf ? <span className="text-indigo-300">(You)</span> : ''}
-                              </div>
-                            </div>
-                            <div className="flex-shrink-0 font-mono">
-                              <span className={`text-[10px] sm:text-xs font-bold drop-shadow ${hpPct < 30 ? 'text-red-400' : 'text-emerald-400'}`}>
-                                {Math.max(0, p.hp || 0)}
-                              </span>
-                              {p.shield ? <span className="ml-1 text-[10px] text-sky-300">🛡{p.shield}</span> : ''}
-                            </div>
-                          </div>
+                          {/* Dark gradient overlay — bottom 60% for readability */}
+                          <div className="absolute inset-0 pointer-events-none"
+                            style={{ background: 'linear-gradient(to top, rgba(2,6,23,0.95) 0%, rgba(2,6,23,0.6) 45%, rgba(2,6,23,0.1) 75%, transparent 100%)' }}
+                          />
 
-                          {/* HP bar */}
-                          <div className="h-1.5 sm:h-2 rounded-full overflow-hidden bg-slate-900/60 border border-slate-700/40">
-                            <div className="flex h-full w-full">
-                              <div className="h-full transition-all duration-500 rounded-full"
-                                style={{ width: `${hpPct}%`, background: hpPct < 30 ? '#ef4444' : hpPct < 60 ? '#eab308' : '#22c55e' }} />
-                              {barShieldPct > 0 && (
-                                <div className="h-full bg-sky-400 transition-all duration-500" style={{ width: `${barShieldPct}%` }} />
-                              )}
-                            </div>
-                          </div>
+                          {/* Stun yellow tint overlay */}
+                          {isStunned && (
+                            <div
+                              className="absolute inset-0 pointer-events-none z-10"
+                              style={{ background: 'rgba(234,179,8,0.18)', animation: 'stunFlicker 0.9s ease-in-out infinite' }}
+                            />
+                          )}
 
-                          {/* Effect badges (compact) */}
-                          {p.effects && typeof p.effects === 'object' && (
-                            <div className="mt-1 flex flex-wrap gap-0.5">
-                              {p.effects.stunTurns > 0 && (
-                                <span className="text-[9px] px-1 py-0.5 rounded font-bold" style={{ background: 'rgba(234,179,8,0.25)', color: '#fde047', animation: 'stunGlow 0.9s ease-in-out infinite' }}>⚡{p.effects.stunTurns}t</span>
-                              )}
-                              {p.effects.stunChancePctTurns > 0 && (
-                                <span className="text-[9px] px-1 py-0.5 rounded font-bold bg-orange-500/20 text-orange-300">🏋️{p.effects.stunChancePctTurns}t</span>
-                              )}
-                              {p.effects.attack?.pct < 0 && (
-                                <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/20 text-red-300">📉{Math.abs(p.effects.attack.pct * 100)}%</span>
-                              )}
-                              {p.effects.attack?.pct > 0 && (
-                                <span className="text-[9px] px-1 py-0.5 rounded bg-green-500/20 text-green-300">📈{p.effects.attack.pct * 100}%</span>
-                              )}
-                              {p.effects.dodgeAllTurns > 0 && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300">🌀{p.effects.dodgeAllTurns}t</span>}
-                              {p.effects.immunityTurns > 0 && <span className="text-[9px] px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-300">🛡️</span>}
-                              {p.effects.damageReduction && <span className="text-[9px] px-1 py-0.5 rounded bg-indigo-500/20 text-indigo-300">🛡+{p.effects.damageReduction.pct * 100}%</span>}
-                              {p.effects.reflect && <span className="text-[9px] px-1 py-0.5 rounded bg-pink-500/20 text-pink-300">🔄</span>}
+                          {/* ⚡ Stun badge center */}
+                          {isStunned && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+                              <span style={{ fontSize: '2.5rem', lineHeight: 1, filter: 'drop-shadow(0 0 8px rgba(234,179,8,1))', animation: 'stunFlicker 0.8s ease-in-out infinite' }}>⚡</span>
                             </div>
                           )}
+
+                          {/* Item icons — top right */}
+                          <div className="absolute top-1.5 right-1.5 flex gap-0.5 flex-wrap justify-end max-w-[60px] z-20">
+                            {Array.isArray(p.itemIds) && p.itemIds.map((itemId) => (
+                              <div key={itemId} className="w-5 h-5 rounded border border-slate-600/60 overflow-hidden bg-slate-800/80 flex items-center justify-center">
+                                <img src={getItemImageUrl(itemId)} alt="" className="w-full h-full object-cover" />
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Damage / heal float numbers */}
+                          {playerEffects.length > 0 && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+                              <div className="flex flex-col items-center gap-1">
+                                {playerEffects.map((effect, i) => {
+                                  const colors = { damage: '#f87171', heal: '#4ade80', shield: '#38bdf8', miss: '#fde68a', dodge: '#fde68a', stun: '#fde047' }
+                                  const color = colors[effect.type] || '#fff'
+                                  return (
+                                    <div key={effect.id} style={{
+                                      color, fontWeight: 'bold',
+                                      fontSize: effect.type === 'stun' ? '1rem' : '1.25rem',
+                                      textShadow: `0 0 8px ${color}, 0 2px 4px rgba(0,0,0,0.8)`,
+                                      animation: 'floatUp 1.5s ease-out forwards',
+                                      animationDelay: `${i * 0.06}s`,
+                                      opacity: 0, whiteSpace: 'nowrap'
+                                    }}>
+                                      {effect.text}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* "Your turn" glow top strip */}
+                          {isCurrentTurn && !isStunned && (
+                            <div className="absolute top-0 left-0 right-0 h-1 z-20"
+                              style={{ background: 'linear-gradient(to right, transparent, rgba(99,102,241,0.9), transparent)' }}
+                            />
+                          )}
+
+                          {/* Stats overlay — pinned to bottom */}
+                          <div className="absolute bottom-0 left-0 right-0 z-20 px-2 pb-2 pt-1">
+                            {/* Name row */}
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <div className="min-w-0">
+                                <div className="text-[10px] sm:text-xs font-bold text-white leading-tight truncate drop-shadow">
+                                  {p.heroName || '—'} {isSelf ? <span className="text-indigo-300">(You)</span> : ''}
+                                </div>
+                              </div>
+                              <div className="flex-shrink-0 font-mono">
+                                <span className={`text-[10px] sm:text-xs font-bold drop-shadow ${hpPct < 30 ? 'text-red-400' : 'text-emerald-400'}`}>
+                                  {Math.max(0, p.hp || 0)}
+                                </span>
+                                {p.shield ? <span className="ml-1 text-[10px] text-sky-300">🛡{p.shield}</span> : ''}
+                              </div>
+                            </div>
+
+                            {/* HP bar */}
+                            <div className="h-1.5 sm:h-2 rounded-full overflow-hidden bg-slate-900/60 border border-slate-700/40">
+                              <div className="flex h-full w-full">
+                                <div className="h-full transition-all duration-500 rounded-full"
+                                  style={{ width: `${hpPct}%`, background: hpPct < 30 ? '#ef4444' : hpPct < 60 ? '#eab308' : '#22c55e' }} />
+                                {barShieldPct > 0 && (
+                                  <div className="h-full bg-sky-400 transition-all duration-500" style={{ width: `${barShieldPct}%` }} />
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Effect badges (compact) */}
+                            {p.effects && typeof p.effects === 'object' && (
+                              <div className="mt-1 flex flex-wrap gap-0.5">
+                                {p.effects.stunTurns > 0 && (
+                                  <span className="text-[9px] px-1 py-0.5 rounded font-bold" style={{ background: 'rgba(234,179,8,0.25)', color: '#fde047', animation: 'stunGlow 0.9s ease-in-out infinite' }}>⚡{p.effects.stunTurns}t</span>
+                                )}
+                                {p.effects.stunChancePctTurns > 0 && (
+                                  <span className="text-[9px] px-1 py-0.5 rounded font-bold bg-orange-500/20 text-orange-300">🏋️{p.effects.stunChancePctTurns}t</span>
+                                )}
+                                {p.effects.attack?.pct < 0 && (
+                                  <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/20 text-red-300">📉{Math.abs(p.effects.attack.pct * 100)}%</span>
+                                )}
+                                {p.effects.attack?.pct > 0 && (
+                                  <span className="text-[9px] px-1 py-0.5 rounded bg-green-500/20 text-green-300">📈{p.effects.attack.pct * 100}%</span>
+                                )}
+                                {p.effects.dodgeAllTurns > 0 && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300">🌀{p.effects.dodgeAllTurns}t</span>}
+                                {p.effects.immunityTurns > 0 && <span className="text-[9px] px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-300">🛡️</span>}
+                                {p.effects.damageReduction && <span className="text-[9px] px-1 py-0.5 rounded bg-indigo-500/20 text-indigo-300">🛡+{p.effects.damageReduction.pct * 100}%</span>}
+                                {p.effects.reflect && <span className="text-[9px] px-1 py-0.5 rounded bg-pink-500/20 text-pink-300">🔄</span>}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )
