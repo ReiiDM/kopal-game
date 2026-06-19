@@ -1540,8 +1540,8 @@ io.on('connection', (socket) => {
           applied: { kind: 'vulnerability', pct: bonus, turns },
         })
       } else if (effectKind === 'damage_over_time') {
-        const mult = getItemMods(actorNext).debuffMultiplier
-        const dotDamage = Math.max(0, Math.floor(Math.max(0, Math.floor(effect.dotDamage || 0)) * mult))
+        const dotDamage = Math.max(0, Math.floor(effect.dotDamage || 0))
+        const initial = Math.max(0, Math.floor(effect.damage || effect.initial || 0))
         const turns = Math.max(1, Math.floor(effect.turns || 1))
         let dealt = 0
         let reflected = 0
@@ -1549,6 +1549,7 @@ io.on('connection', (socket) => {
         let evaded = false
         let itemStunApplied = false
         let crit = false
+        let lifestealHealed = 0
         if (initial > 0) {
           const result = applyDamage(nextMatch, playerIndex, enemyIndex, initial, { isUltimate })
           nextMatch = result.match
@@ -1558,6 +1559,7 @@ io.on('connection', (socket) => {
           evaded = result.evaded
           itemStunApplied = result.itemStunApplied
           crit = result.crit
+          lifestealHealed = result.lifestealHealed || 0
         }
         const enemyNext = getPlayerByIndex(nextMatch, enemyIndex)
         ensureEffects(enemyNext)
@@ -1575,10 +1577,11 @@ io.on('connection', (socket) => {
           itemStunApplied,
           crit,
           applied: dotDamage > 0 ? { kind: 'dot', damage: dotDamage, turns } : undefined,
+          ...(lifestealHealed > 0 ? { lifestealHealed } : {}),
         })
       } else if (effectKind === 'burst_and_dot') {
-        const mult = getItemMods(actorNext).debuffMultiplier
-        const dotDamage = Math.max(0, Math.floor(Math.max(0, Math.floor(effect.dotDamage || 0)) * mult))
+        const dotDamage = Math.max(0, Math.floor(effect.dotDamage || 0))
+        const burst = Math.max(0, Math.floor(effect.damage || effect.burst || 0))
         const turns = Math.max(1, Math.floor(effect.turns || 1))
         const result = applyDamage(nextMatch, playerIndex, enemyIndex, burst, { isUltimate })
         nextMatch = result.match
