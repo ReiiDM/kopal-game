@@ -183,14 +183,45 @@ function App() {
   // Tracks players who have already received the death sound this match
   const deadPlayersRef = useRef(new Set())
 
-  // Play a pre-recorded voice/sfx file (OGG)
-  const playVoice = (filename, volume = 1.0) => {
+  // Pre-decoded AudioBuffers for voice clips (loaded once on mount)
+  const voiceBuffersRef = useRef({ ss: null, hurt: null, died: null })
+  // Raw ArrayBuffers stored as fallback if decoding failed on load (e.g. suspended context)
+  const rawVoiceBuffersRef = useRef({ ss: null, hurt: null, died: null })
+
+  // Play a pre-decoded voice clip via the shared Web Audio API context.
+  // This works on mobile because AudioContext is already resumed by user gestures.
+  const playVoice = (key, volume = 1.0) => {
     try {
-      const audio = new Audio(`/${filename}`)
-      audio.volume = volume
-      audio.play().catch(() => {
-        // Autoplay blocked — ignore silently
-      })
+      const audioCtx = audioCtxRef.current
+      if (!audioCtx || audioCtx.state === 'closed') return
+
+      const buf = voiceBuffersRef.current[key]
+      if (buf) {
+        // Already decoded — play immediately
+        if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {})
+        const src = audioCtx.createBufferSource()
+        const gainNode = audioCtx.createGain()
+        src.buffer = buf
+        gainNode.gain.setValueAtTime(volume, audioCtx.currentTime)
+        src.connect(gainNode)
+        gainNode.connect(audioCtx.destination)
+        src.start(audioCtx.currentTime)
+      } else {
+        // Not decoded yet — try decoding from raw bytes now
+        const raw = rawVoiceBuffersRef.current[key]
+        if (!raw) return
+        audioCtx.decodeAudioData(raw.slice(0), (decoded) => {
+          voiceBuffersRef.current[key] = decoded
+          if (audioCtx.state === 'closed') return
+          const src = audioCtx.createBufferSource()
+          const gainNode = audioCtx.createGain()
+          src.buffer = decoded
+          gainNode.gain.setValueAtTime(volume, audioCtx.currentTime)
+          src.connect(gainNode)
+          gainNode.connect(audioCtx.destination)
+          src.start(audioCtx.currentTime)
+        }, (err) => console.warn('Voice decode error:', err))
+      }
     } catch (e) {
       // ignore
     }
@@ -395,6 +426,47 @@ function App() {
       window.removeEventListener('touchstart', handleGesture)
       window.removeEventListener('keydown', handleGesture)
     }
+  }, [])
+
+  // Preload voice OGG files — fetch raw bytes immediately, decode into AudioBuffers.
+  // If the AudioContext is suspended on page load (common on mobile), raw bytes are kept
+  // as a fallback and decoded lazily on first playVoice() call after user interaction.
+  useEffect(() => {
+    const clips = {
+      ss:   '/ss-audio.ogg',
+      hurt: '/hurt-audio.ogg',
+      died: '/died-audio.ogg',
+    }
+
+    async function loadAll() {
+      // Ensure AudioContext exists
+      if (!audioCtxRef.current) {
+        try {
+          audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
+        } catch (e) { return }
+      }
+      const ctx = audioCtxRef.current
+
+      await Promise.all(
+        Object.entries(clips).map(async ([key, url]) => {
+          try {
+            const res = await fetch(url)
+            const raw = await res.arrayBuffer()
+            // Store raw bytes so playVoice can decode lazily if needed
+            rawVoiceBuffersRef.current[key] = raw
+            // Try to decode now (may fail if context still suspended)
+            if (ctx.state !== 'closed') {
+              const decoded = await ctx.decodeAudioData(raw.slice(0))
+              voiceBuffersRef.current[key] = decoded
+            }
+          } catch (e) {
+            console.warn(`Voice clip "${key}" failed to load/decode:`, e)
+          }
+        })
+      )
+    }
+
+    loadAll()
   }, [])
 
   const serverCandidates = useMemo(() => {
@@ -734,7 +806,7 @@ function App() {
           }, 1800)
 
           // 🔊 SS voice-over
-          playVoice('ss-audio.ogg', 0.9)
+          playVoice('ss', 0.9)
         }
       } else {
         const hasCrit = logEntries.some(entry => entry.crit)
@@ -812,7 +884,7 @@ function App() {
             }])
 
             // 🔊 Hurt voice-over when ANY hero takes damage
-            playVoice('hurt-audio.ogg', 0.85)
+            playVoice('hurt', 0.85)
             
             setTimeout(() => {
               setBattleEffects((prev) => prev.filter(e => e.id !== effectId))
@@ -932,7 +1004,7 @@ function App() {
         for (const p of match.players) {
           if ((p.hp ?? 1) <= 0 && !deadPlayersRef.current.has(p.playerIndex)) {
             deadPlayersRef.current.add(p.playerIndex)
-            setTimeout(() => playVoice('died-audio.ogg', 1.0), 200)
+            setTimeout(() => playVoice('died', 1.0), 200)
           }
         }
       }
