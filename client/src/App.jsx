@@ -1186,6 +1186,16 @@ function App() {
   const turnDamageBoostPct = turnNumber >= 8 ? 0.2 : turnNumber >= 6 ? 0.1 : 0
   const page = matchState ? 'battle' : roomCode ? 'setup' : 'lobby'
 
+  // Lock body scroll on mobile during battle
+  useEffect(() => {
+    if (page === 'battle') {
+      document.body.classList.add('battle-active')
+    } else {
+      document.body.classList.remove('battle-active')
+    }
+    return () => document.body.classList.remove('battle-active')
+  }, [page])
+
   // Effect to delay showing winner modal
   useEffect(() => {
     if (isMatchOver) {
@@ -1318,8 +1328,8 @@ function App() {
   }
 
   return (
-    <div className={`bg-slate-950 text-slate-100 ${page === 'battle' ? 'h-[100dvh] overflow-hidden flex flex-col' : 'min-h-full'}`}>
-      <div className={`mx-auto flex max-w-3xl flex-col px-4 sm:px-6 ${
+    <div className={`battle-root bg-slate-950 text-slate-100 ${page === 'battle' ? 'h-[100dvh] overflow-hidden flex flex-col' : 'min-h-full'}`}>
+      <div className={`battle-inner mx-auto flex max-w-3xl flex-col px-4 sm:px-6 ${
         page === 'battle' ? 'h-full overflow-hidden' : 'min-h-full justify-center py-12'
       }`}>
         <header className={page === 'battle' ? 'mb-2 py-2 border-b border-slate-800/60' : 'mb-10'}>
@@ -1783,7 +1793,7 @@ function App() {
 
         {page === 'battle' ? (
           <>
-            <section className={`flex-1 overflow-hidden md:overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/40 p-2 sm:p-4 md:p-6 pb-24 md:pb-6 mt-1 md:mt-4 transition-all duration-300 ${isShaking ? 'animate-shake' : ''}`}>
+            <section className={`battle-section flex-1 overflow-hidden md:overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/40 p-2 sm:p-4 md:p-6 pb-24 md:pb-6 mt-1 md:mt-4 transition-all duration-300 ${isShaking ? 'animate-shake' : ''}`}>
               <div className="grid gap-2 md:gap-6">
                 <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-2 sm:p-4">
                   <div className="flex flex-wrap items-center justify-between gap-1 sm:gap-3">
