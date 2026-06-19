@@ -154,6 +154,7 @@ function App() {
   const [showWinnerModal, setShowWinnerModal] = useState(false) // To control when winner modal appears
   const [roomPlayers, setRoomPlayers] = useState([]) // For tracking players in room with team info
   const [selectedTarget, setSelectedTarget] = useState(null) // For selecting target in 2v2
+  const [isMobileTauntOpen, setIsMobileTauntOpen] = useState(false)
   const [isShaking, setIsShaking] = useState(false)
   const [ultimateSplash, setUltimateSplash] = useState(null)
   const [turnBanner, setTurnBanner] = useState(null)
@@ -1442,16 +1443,19 @@ function App() {
               </p>
             </div>
 
-            {/* Team Display */}
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Team Display — 2-column side by side */}
+            <div className="mt-4 grid grid-cols-2 gap-3">
               {/* Team 1 */}
-              <div className="rounded-lg border border-red-800 bg-red-950/30 p-4">
+              <div className="rounded-lg border border-red-800 bg-red-950/30 p-3">
                 <div className="text-sm font-semibold text-red-300 mb-2">🔴 Team 1 ({roomPlayers.filter(p => p.team === 1).length}/2)</div>
-                <div className="space-y-1">
+                <div className="space-y-1 min-h-[2rem]">
+                  {roomPlayers.filter(p => p.team === 1).length === 0 && (
+                    <div className="text-xs text-slate-600 italic">Empty</div>
+                  )}
                   {roomPlayers.filter(p => p.team === 1).map(p => (
-                    <div key={p.socketId} className="relative flex items-center justify-between py-1">
-                      <div className={`text-sm ${p.isReady ? 'text-emerald-300' : 'text-slate-400'}`}>
-                        {p.isReady ? '✅ Ready' : '⏳ Waiting...'} {p.socketId === socketId ? '(You)' : ''}
+                    <div key={p.socketId} className="relative flex items-center gap-1 py-0.5">
+                      <div className={`text-xs ${p.isReady ? 'text-emerald-300' : 'text-slate-400'}`}>
+                        {p.isReady ? '✅' : '⏳'} {p.socketId === socketId ? 'You' : 'Player'}
                       </div>
                       {activeTaunts[p.socketId] && (
                         <div className="absolute right-0 top-1/2 transform translate-x-[110%] -translate-y-1/2 z-30 bg-white text-slate-950 px-2 py-1 rounded-lg text-xs font-bold border border-slate-950 whitespace-nowrap shadow-lg animate-pulse">
@@ -1465,13 +1469,16 @@ function App() {
               </div>
 
               {/* Team 2 */}
-              <div className="rounded-lg border border-blue-800 bg-blue-950/30 p-4">
+              <div className="rounded-lg border border-blue-800 bg-blue-950/30 p-3">
                 <div className="text-sm font-semibold text-blue-300 mb-2">🔵 Team 2 ({roomPlayers.filter(p => p.team === 2).length}/2)</div>
-                <div className="space-y-1">
+                <div className="space-y-1 min-h-[2rem]">
+                  {roomPlayers.filter(p => p.team === 2).length === 0 && (
+                    <div className="text-xs text-slate-600 italic">Empty</div>
+                  )}
                   {roomPlayers.filter(p => p.team === 2).map(p => (
-                    <div key={p.socketId} className="relative flex items-center justify-between py-1">
-                      <div className={`text-sm ${p.isReady ? 'text-emerald-300' : 'text-slate-400'}`}>
-                        {p.isReady ? '✅ Ready' : '⏳ Waiting...'} {p.socketId === socketId ? '(You)' : ''}
+                    <div key={p.socketId} className="relative flex items-center gap-1 py-0.5">
+                      <div className={`text-xs ${p.isReady ? 'text-emerald-300' : 'text-slate-400'}`}>
+                        {p.isReady ? '✅' : '⏳'} {p.socketId === socketId ? 'You' : 'Player'}
                       </div>
                       {activeTaunts[p.socketId] && (
                         <div className="absolute right-0 top-1/2 transform translate-x-[110%] -translate-y-1/2 z-30 bg-white text-slate-950 px-2 py-1 rounded-lg text-xs font-bold border border-slate-950 whitespace-nowrap shadow-lg animate-pulse">
@@ -1485,12 +1492,12 @@ function App() {
               </div>
             </div>
 
-            {/* Switch Team Button */}
+            {/* Switch Team Button — centered below the 2 columns */}
             {!hasSentReady ? (
-              <div className="mt-4">
+              <div className="mt-3 flex justify-center">
                 <button
                   type="button"
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white font-medium text-sm rounded-lg transition-all duration-300"
+                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white font-medium text-sm rounded-lg transition-all duration-300 active:scale-95"
                   onClick={handleSwitchTeam}
                   disabled={!isConnected}
                 >
@@ -1503,27 +1510,32 @@ function App() {
             {setupStep === 1 && (
               <div className="mt-6 grid gap-4">
                 <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
-                  <div className="text-sm font-semibold flex items-center gap-2">
+                  <div className="text-sm font-semibold flex items-center gap-2 mb-3">
                     <span className="w-6 h-6 rounded-full bg-indigo-500 text-white flex items-center justify-center text-xs">1</span>
-                    Select Hero
+                    Select Fighter
+                    <span className="ml-auto text-xs text-slate-500 font-normal">Only Fighters shown</span>
                   </div>
-                  <div className="mt-3 grid gap-2">
-                    {Object.values(heroes).map((h) => (
+
+                  {/* 3-column Fighter profile grid */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {Object.values(heroes).filter(h => h.role === 'Fighter').map((h) => (
                       <button
                         key={h.id}
                         type="button"
-                        onClick={() => setSelectedHeroId(h.id)}
+                        onClick={() => setSelectedHeroId(selectedHeroId === h.id ? '' : h.id)}
                         disabled={hasSentReady}
-                        className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-all ${
+                        className={`flex flex-col items-center gap-2 rounded-xl border p-3 text-center transition-all duration-200 ${
                           selectedHeroId === h.id
-                            ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_10px_rgba(99,102,241,0.2)]'
-                            : 'border-slate-800 bg-slate-950/30 hover:bg-slate-900/40'
-                        } ${hasSentReady ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                            ? 'border-indigo-500 bg-indigo-500/15 shadow-[0_0_14px_rgba(99,102,241,0.3)] scale-[1.03]'
+                            : 'border-slate-700 bg-slate-950/40 hover:bg-slate-900/60 hover:border-slate-600'
+                        } ${hasSentReady ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer'}`}
                       >
-                        {/* Hero Image Thumbnail */}
-                        <div className="w-14 h-14 rounded-full border-2 border-slate-600 overflow-hidden bg-slate-800 flex items-center justify-center flex-shrink-0">
-                          <img 
-                            src={`/images/${h.id}.jpg`} 
+                        {/* Profile Image */}
+                        <div className={`w-16 h-16 rounded-full border-2 overflow-hidden bg-slate-800 flex items-center justify-center flex-shrink-0 ${
+                          selectedHeroId === h.id ? 'border-indigo-400 shadow-[0_0_8px_rgba(99,102,241,0.5)]' : 'border-slate-600'
+                        }`}>
+                          <img
+                            src={`/images/${h.id}.jpg`}
                             alt={h.name}
                             className="w-full h-full object-cover"
                             onError={(e) => {
@@ -1537,84 +1549,83 @@ function App() {
                               }
                             }}
                           />
-                          <div className="w-full h-full flex items-center justify-center text-2xl text-slate-500" style={{ display: 'none' }}>
+                          <div className="w-full h-full flex items-center justify-center text-2xl text-slate-400" style={{ display: 'none' }}>
                             {h.name.charAt(0)}
                           </div>
                         </div>
-
-                        <div className="flex-1">
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="font-medium text-base">{h.name}</span>
-                            {h.role && <span className="text-xs text-slate-500 font-normal">— {h.role}</span>}
-                          </div>
-                          <div className="text-xs text-slate-400">❤️ {h.baseHP} HP</div>
-                        </div>
+                        <div className="text-xs font-semibold text-slate-200 leading-tight">{h.name}</div>
                         {selectedHeroId === h.id && (
-                          <div className="text-emerald-400 text-xl">✓</div>
+                          <div className="text-emerald-400 text-base leading-none">✓</div>
                         )}
                       </button>
                     ))}
                   </div>
-                </div>
 
-                {/* Skills Preview (shown when hero selected) */}
-                {selectedHero && (
-                  <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
-                    <div className="text-sm font-semibold flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-full bg-purple-500 text-white flex items-center justify-center text-xs">1.5</span>
-                      {selectedHero.name}'s Skills
-                    </div>
-                    
-                    <div className="mt-2 text-xs text-slate-400 mb-3">
-                      Base HP: {selectedHero.baseHP}
-                    </div>
+                  {/* Fighter detail panel — shown when a fighter is selected */}
+                  {selectedHero && (
+                    <div className="mt-4 rounded-lg border border-indigo-800/60 bg-indigo-950/20 p-4 animate-fadeIn">
+                      {/* Fighter header */}
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-14 h-14 rounded-full border-2 border-indigo-400 overflow-hidden bg-slate-800 flex-shrink-0">
+                          <img
+                            src={`/images/${selectedHero.id}.jpg`}
+                            alt={selectedHero.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => { e.target.src = `https://picsum.photos/seed/${selectedHero.id}/100/100` }}
+                          />
+                        </div>
+                        <div>
+                          <div className="text-base font-bold text-slate-100">{selectedHero.name}</div>
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 font-semibold">⚔️ {selectedHero.role}</span>
+                            <span className="text-xs text-slate-400">❤️ {selectedHero.baseHP} HP</span>
+                          </div>
+                        </div>
+                      </div>
 
-                    <div className="mt-2 rounded-lg border border-slate-700 bg-slate-950/50 p-3">
-                      <div className="text-xs font-semibold text-indigo-300 mb-2">⚔️ Normal Attack</div>
-                      <div className="text-sm text-slate-200">{selectedHero.normalAttack?.name}</div>
-                      {selectedHero.normalAttack?.description ? (
-                        <div className="mt-1 text-xs text-slate-300">{selectedHero.normalAttack.description}</div>
-                      ) : null}
-                      <div className="mt-2 space-y-0.5 text-xs text-slate-400">
-                        {effectDetailLines(selectedHero.normalAttack?.effect).map((line) => (
-                          <div key={line}>{line}</div>
+                      {/* Normal Attack */}
+                      <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-3 mb-2">
+                        <div className="text-xs font-semibold text-indigo-300 mb-1">⚔️ Normal Attack — {selectedHero.normalAttack?.name}</div>
+                        {selectedHero.normalAttack?.description && (
+                          <div className="text-xs text-slate-400 mb-1">{selectedHero.normalAttack.description}</div>
+                        )}
+                        <div className="space-y-0.5">
+                          {effectDetailLines(selectedHero.normalAttack?.effect).map((line) => (
+                            <div key={line} className="text-xs text-slate-500">{line}</div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Skills */}
+                      <div className="grid gap-2">
+                        {(selectedHero.skills || []).map((s) => (
+                          <div key={s.name} className="rounded-lg border border-slate-700 bg-slate-950/50 p-3">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <div className="font-semibold text-xs text-slate-200 flex items-center gap-1">
+                                {s.type === 'ultimate' && <span className="text-yellow-400">⭐</span>}
+                                {s.name}
+                              </div>
+                              <div className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                                s.type === 'ultimate' ? 'bg-yellow-500/20 text-yellow-300' :
+                                s.type === 'defense' ? 'bg-blue-500/20 text-blue-300' :
+                                s.type === 'utility' ? 'bg-purple-500/20 text-purple-300' :
+                                'bg-red-500/20 text-red-300'
+                              }`}>{s.type} • CD {s.cooldown}</div>
+                            </div>
+                            {s.description && (
+                              <div className="text-xs text-slate-400 mb-1">{s.description}</div>
+                            )}
+                            <div className="space-y-0.5">
+                              {effectDetailLines(s.effect).map((line) => (
+                                <div key={line} className="text-xs text-slate-500">{line}</div>
+                              ))}
+                            </div>
+                          </div>
                         ))}
                       </div>
                     </div>
-
-                    <div className="mt-3 grid gap-2">
-                      {(selectedHero.skills || []).map((s, index) => (
-                        <div key={s.name} className="rounded-lg border border-slate-700 bg-slate-950/50 p-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="font-medium text-sm flex items-center gap-2">
-                              {s.type === 'ultimate' ? <span className="text-yellow-400">⭐</span> : ''}
-                              {s.name}
-                            </div>
-                            <div className={`text-xs px-2 py-1 rounded-full ${
-                              s.type === 'ultimate' ? 'bg-yellow-500/20 text-yellow-300' :
-                              s.type === 'defense' ? 'bg-blue-500/20 text-blue-300' :
-                              s.type === 'utility' ? 'bg-purple-500/20 text-purple-300' :
-                              'bg-red-500/20 text-red-300'
-                            }`}>
-                              {s.type} • CD {s.cooldown}
-                            </div>
-                          </div>
-                          {s.description ? (
-                            <div className="mt-2 text-xs text-slate-300">{s.description}</div>
-                          ) : null}
-                          <div className="mt-2 space-y-0.5 text-xs text-slate-400">
-                            {effectDetailLines(s.effect).map((line) => (
-                              <div key={line}>{line}</div>
-                            ))}
-                            {s.effect?.notes ? (
-                              <div className="text-slate-300 italic">💡 {s.effect.notes}</div>
-                            ) : null}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {/* Next Button for Step 1 */}
                 {selectedHero && (
@@ -2221,6 +2232,58 @@ function App() {
                 >
                   →
                 </button>
+              </div>
+            </div>
+
+            {/* Floating Arrow & Quick Chat Drawer */}
+            <div className={`fixed right-0 top-1/2 -translate-y-1/2 z-50 flex items-center transition-transform duration-300 ${
+              isMobileTauntOpen ? 'translate-x-0' : 'translate-x-[240px]'
+            }`}>
+              {/* Toggle Button (Arrow) */}
+              <button
+                type="button"
+                onClick={() => setIsMobileTauntOpen(!isMobileTauntOpen)}
+                className="bg-gradient-to-b from-indigo-500 to-indigo-700 hover:from-indigo-400 hover:to-indigo-600 active:scale-95 text-white rounded-l-2xl p-3.5 shadow-2xl border-y border-l border-indigo-400/40 flex items-center justify-center transition-all duration-200 focus:outline-none"
+                style={{ width: '46px', height: '54px' }}
+                aria-label="Toggle Quick Chat"
+              >
+                {isMobileTauntOpen ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-indigo-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-indigo-100 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                )}
+              </button>
+
+              {/* Quick Chat Menu Panel */}
+              <div className="bg-slate-900/95 backdrop-blur-md border-y border-l border-slate-700/60 rounded-l-2xl p-4 shadow-2xl flex flex-col gap-2.5 w-[240px] border-indigo-500/10">
+                <div className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-1 pb-1.5 border-b border-slate-800 flex items-center gap-1.5">
+                  <span className="animate-bounce">💬</span> Quick Chat
+                </div>
+                {[
+                  'Galaw-galaw baka pumanaw',
+                  'Tsamba lang yan lods',
+                  'Parang kulang sa gym',
+                  'Iyak nalang',
+                  'Talo ka na naman boy'
+                ].map((taunt) => (
+                  <button
+                    key={taunt}
+                    type="button"
+                    onClick={() => {
+                      if (socket) {
+                        socket.emit('send-taunt', { tauntText: taunt })
+                      }
+                      setIsMobileTauntOpen(false)
+                    }}
+                    className="w-full text-left px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-semibold rounded-xl border border-slate-700/50 hover:border-indigo-500/45 transition-all active:scale-98 duration-100 truncate shadow-sm hover:shadow-indigo-500/10"
+                  >
+                    {taunt}
+                  </button>
+                ))}
               </div>
             </div>
           </>
