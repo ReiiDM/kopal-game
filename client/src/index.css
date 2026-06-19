@@ -9,36 +9,35 @@ body,
 }
 
 /* ====================================
-   BATTLE VIEWPORT LOCK (mobile)
-   Prevents ALL scrolling on the battle page.
-   Applied via className in App.jsx.
+   BATTLE VIEWPORT LOCK (mobile only)
+   Only active when body.battle-active is set.
+   Setup + lobby pages scroll normally.
    ==================================== */
 @media (max-width: 767px) {
   body.battle-active {
-    overflow: hidden;
-    height: 100dvh;
-    max-height: 100dvh;
+    overflow: hidden !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
   }
-  .battle-root {
+  body.battle-active .battle-root {
     height: 100dvh !important;
     max-height: 100dvh !important;
     overflow: hidden !important;
     display: flex !important;
     flex-direction: column !important;
   }
-  .battle-inner {
+  body.battle-active .battle-inner {
     height: 100% !important;
     overflow: hidden !important;
     display: flex !important;
     flex-direction: column !important;
   }
-  .battle-section {
+  body.battle-active .battle-section {
     flex: 1 !important;
     overflow: hidden !important;
     min-height: 0 !important;
   }
 }
-
 
 /* Confetti fall animation */
 @keyframes fall {
