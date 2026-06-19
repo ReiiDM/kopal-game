@@ -1236,64 +1236,226 @@ function App() {
     setSelectedTarget(null)
   }, [currentTurnPlayerIndex])
 
-  // BGM Player
+  // ── Battle BGM ──────────────────────────────────────────────────────────
+  // Plays a looping 8-bar battle track (drums + bass + melody) via Web Audio.
+  // Activates when `page === 'battle'` && `musicEnabled` && `!isMatchOver`.
+  const battleBgmRef = useRef(null) // { audioCtx, masterGain, stopAll }
+
   useEffect(() => {
-    if (!musicEnabled || isMatchOver) {
-      if (bgmIntervalRef.current) {
-        clearInterval(bgmIntervalRef.current)
-        bgmIntervalRef.current = null
-      }
-      if (bgmAudioCtxRef.current) {
-        bgmAudioCtxRef.current.close().catch(() => {})
-        bgmAudioCtxRef.current = null
-      }
+    const isBattleActive = page === 'battle' && !isMatchOver
+
+    // ── Teardown helper ──────────────────────────────────────────────────
+    function stopBgm(fadeMs = 400) {
+      const bgm = battleBgmRef.current
+      if (!bgm) return
+      try {
+        bgm.masterGain.gain.setTargetAtTime(0, bgm.audioCtx.currentTime, fadeMs / 1000 / 3)
+        setTimeout(() => {
+          try { bgm.stopAll() } catch (_) {}
+          try { bgm.audioCtx.close() } catch (_) {}
+        }, fadeMs + 100)
+      } catch (_) {}
+      battleBgmRef.current = null
+    }
+
+    if (!musicEnabled || !isBattleActive) {
+      stopBgm(300)
       return
     }
 
-    if (!bgmAudioCtxRef.current) {
-      bgmAudioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
+    // ── Already running ──────────────────────────────────────────────────
+    if (battleBgmRef.current) return
+
+    // ── Create AudioContext ──────────────────────────────────────────────
+    let audioCtx
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    } catch (e) { return }
+
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {})
     }
-    const audioCtx = bgmAudioCtxRef.current
 
-    // Simple 8-bit pentatonic bassline loop
-    const notes = [
-      110.00, 110.00, 130.81, 146.83, 
-      164.81, 164.81, 146.83, 130.81,
-      110.00, 110.00, 146.83, 164.81, 
-      196.00, 164.81, 146.83, 130.81
+    // Master gain (for fade in / out)
+    const masterGain = audioCtx.createGain()
+    masterGain.gain.setValueAtTime(0, audioCtx.currentTime)
+    masterGain.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 1.2)
+    masterGain.connect(audioCtx.destination)
+
+    const intervals = []
+    const oscillators = []
+
+    // ── Helper: schedule a short synth note ─────────────────────────────
+    function schedNote(type, freq, startT, dur, vol, detune = 0) {
+      try {
+        const osc = audioCtx.createOscillator()
+        const gain = audioCtx.createGain()
+        osc.type = type
+        osc.frequency.setValueAtTime(freq, startT)
+        if (detune) osc.detune.setValueAtTime(detune, startT)
+        gain.gain.setValueAtTime(vol, startT)
+        gain.gain.exponentialRampToValueAtTime(0.0001, startT + dur)
+        osc.connect(gain)
+        gain.connect(masterGain)
+        osc.start(startT)
+        osc.stop(startT + dur + 0.01)
+        oscillators.push(osc)
+      } catch (_) {}
+    }
+
+    // ── Helper: kick drum (sub-bass thump) ──────────────────────────────
+    function schedKick(t) {
+      try {
+        const osc = audioCtx.createOscillator()
+        const gain = audioCtx.createGain()
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(150, t)
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.12)
+        gain.gain.setValueAtTime(0.9, t)
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.25)
+        osc.connect(gain)
+        gain.connect(masterGain)
+        osc.start(t)
+        osc.stop(t + 0.28)
+        oscillators.push(osc)
+      } catch (_) {}
+    }
+
+    // ── Helper: snare (noise burst) ──────────────────────────────────────
+    function schedSnare(t) {
+      try {
+        const bufSize = audioCtx.sampleRate * 0.15
+        const buffer = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate)
+        const data = buffer.getChannelData(0)
+        for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1
+        const src = audioCtx.createBufferSource()
+        src.buffer = buffer
+        const filter = audioCtx.createBiquadFilter()
+        filter.type = 'highpass'
+        filter.frequency.value = 1500
+        const gain = audioCtx.createGain()
+        gain.gain.setValueAtTime(0.35, t)
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15)
+        src.connect(filter)
+        filter.connect(gain)
+        gain.connect(masterGain)
+        src.start(t)
+        src.stop(t + 0.16)
+      } catch (_) {}
+    }
+
+    // ── Helper: hi-hat ───────────────────────────────────────────────────
+    function schedHat(t, vol = 0.15) {
+      try {
+        const bufSize = audioCtx.sampleRate * 0.05
+        const buffer = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate)
+        const data = buffer.getChannelData(0)
+        for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1
+        const src = audioCtx.createBufferSource()
+        src.buffer = buffer
+        const filter = audioCtx.createBiquadFilter()
+        filter.type = 'highpass'
+        filter.frequency.value = 6000
+        const gain = audioCtx.createGain()
+        gain.gain.setValueAtTime(vol, t)
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05)
+        src.connect(filter)
+        filter.connect(gain)
+        gain.connect(masterGain)
+        src.start(t)
+        src.stop(t + 0.06)
+      } catch (_) {}
+    }
+
+    // ── BPM & timing ────────────────────────────────────────────────────
+    const BPM = 138
+    const beat = 60 / BPM         // seconds per beat
+    const bar = beat * 4          // 4/4 time
+
+    // ── Bass line (16-step pattern, loops every 2 bars) ──────────────────
+    // Notes in Hz — A minor / Aeolian feel
+    const bassPattern = [
+      110, 0,   110, 0,   130.81, 0,  110,    0,
+      146.83, 0, 110, 0,  164.81, 0,  146.83, 110
     ]
-    let step = 0
 
-    const interval = setInterval(() => {
+    // ── Melody line (32-step, loops every 4 bars) ─────────────────────── 
+    // Energetic, battle-themed ascending/descending phrases
+    const melodyPattern = [
+      220,  0,    329.63, 0,     392,    0,     440,   329.63,
+      392,  0,    349.23, 293.66, 261.63, 0,    329.63, 0,
+      392,  0,    440,   493.88, 523.25, 440,  392,    0,
+      349.23,293.66,261.63, 0,   220,    0,     246.94, 0
+    ]
+
+    // ── Counter to track beat position ───────────────────────────────────
+    let scheduledUntil = audioCtx.currentTime + 0.1
+    let bassStep = 0
+    let melStep = 0
+    let drumBeat = 0   // 0..7 (8 sub-beats per 2 beats)
+
+    const LOOK_AHEAD = 0.15  // seconds ahead to schedule
+    const SCHED_RATE = 80    // ms between scheduler runs
+
+    const subBeat = beat / 2  // 8th notes for hi-hat
+
+    function scheduler() {
+      if (!audioCtx || audioCtx.state === 'closed') return
+      const now = audioCtx.currentTime
+
       if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {})
         return
       }
-      const freq = notes[step % notes.length]
-      
-      const osc = audioCtx.createOscillator()
-      const gainNode = audioCtx.createGain()
-      
-      osc.type = 'triangle'
-      osc.frequency.setValueAtTime(freq, audioCtx.currentTime)
-      
-      gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.33)
-      
-      osc.connect(gainNode)
-      gainNode.connect(audioCtx.destination)
-      
-      osc.start()
-      osc.stop(audioCtx.currentTime + 0.35)
-      
-      step++
-    }, 350)
 
-    bgmIntervalRef.current = interval
+      while (scheduledUntil < now + LOOK_AHEAD) {
+        const t = scheduledUntil
+
+        // ── Drums (per 8th note) ─────────────────────────────────────────
+        const beat4 = drumBeat % 8   // 0-7 (two beats, 8 8th-notes)
+        if (beat4 === 0) schedKick(t)                        // beat 1
+        if (beat4 === 4) schedKick(t)                        // beat 3  
+        if (beat4 === 2 || beat4 === 6) schedSnare(t)        // beat 2 & 4
+        schedHat(t, beat4 % 2 === 0 ? 0.14 : 0.07)          // 8th hi-hats
+
+        // ── Bass (per 8th note, 16-step pattern) ────────────────────────
+        const bFreq = bassPattern[bassStep % bassPattern.length]
+        if (bFreq > 0) {
+          schedNote('sawtooth', bFreq, t, subBeat * 0.85, 0.22)
+          // sub-octave layer
+          schedNote('sine', bFreq / 2, t, subBeat * 0.9, 0.18)
+        }
+
+        // ── Melody (per 8th note, 32-step pattern) ───────────────────────
+        const mFreq = melodyPattern[melStep % melodyPattern.length]
+        if (mFreq > 0) {
+          schedNote('square', mFreq, t, subBeat * 0.7, 0.10)
+          schedNote('triangle', mFreq * 2, t, subBeat * 0.5, 0.04, 8) // harmony
+        }
+
+        scheduledUntil += subBeat
+        bassStep++
+        melStep++
+        drumBeat++
+      }
+    }
+
+    const schedInterval = setInterval(scheduler, SCHED_RATE)
+    intervals.push(schedInterval)
+
+    battleBgmRef.current = {
+      audioCtx,
+      masterGain,
+      stopAll: () => {
+        intervals.forEach(id => clearInterval(id))
+        oscillators.forEach(o => { try { o.disconnect() } catch (_) {} })
+      }
+    }
 
     return () => {
-      clearInterval(interval)
+      stopBgm(500)
     }
-  }, [musicEnabled, isMatchOver])
+  }, [page, musicEnabled, isMatchOver])
 
   function handleNormalAttack() {
     if (!socket || !matchState) return
