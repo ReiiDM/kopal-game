@@ -171,7 +171,8 @@ function getItemMods(player) {
     reduceRandomCooldownBy: ids.has('energy_drink') ? 1 : 0,
     flatDamageReduction: ids.has('jacket_ni_kuya') ? 6 : 0,
     stunChanceOnDamage: ids.has('old_nokia') ? 0.25 : 0,
-    debuffMultiplier: ids.has('chismis_notebook') ? 1.25 : 1,
+    debuffMultiplier: 1, // chismis_notebook now extends turns instead of boosting pct
+    extraDebuffTurns: ids.has('chismis_notebook') ? 1 : 0,
     randomBuffEachTurn: ids.has('pamahiin_charm'),
     ultimateDamageBonusPct: ids.has('final_blessing') ? 0.15 : 0,
   }
@@ -1262,9 +1263,9 @@ io.on('connection', (socket) => {
         }
       } else if (effectKind === 'damage_and_attack_down') {
         const dmg = Math.max(0, Math.floor(effect.damage || 0))
-        const mult = getItemMods(actorNext).debuffMultiplier
-        const pct = Math.max(0, Math.min(0.6, Number(effect.attackDownPct || 0) * mult))
-        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        const extraTurns = getItemMods(actorNext).extraDebuffTurns
+        const pct = Math.max(0, Math.min(0.6, Number(effect.attackDownPct || 0)))
+        const turns = Math.max(1, Math.floor(effect.turns || 1)) + extraTurns
         const result = applyDamage(nextMatch, playerIndex, enemyIndex, dmg, { isUltimate })
         nextMatch = result.match
         const enemyAfter = getPlayerByIndex(nextMatch, enemyIndex)
@@ -1285,9 +1286,9 @@ io.on('connection', (socket) => {
           applied: { kind: 'attack', pct: -pct, turns },
         })
       } else if (effectKind === 'attack_down_and_heal') {
-        const mult = getItemMods(actorNext).debuffMultiplier
-        const pct = Math.max(0, Math.min(0.6, Number(effect.attackDownPct || 0) * mult))
-        const turns = Math.max(1, Math.floor(effect.turns || 1))
+        const extraTurns = getItemMods(actorNext).extraDebuffTurns
+        const pct = Math.max(0, Math.min(0.6, Number(effect.attackDownPct || 0)))
+        const turns = Math.max(1, Math.floor(effect.turns || 1)) + extraTurns
         const healSelf = Math.max(0, Math.floor(effect.healSelf || 0))
         const enemyAfter = getPlayerByIndex(nextMatch, enemyIndex)
         ensureEffects(enemyAfter)
@@ -1442,6 +1443,25 @@ io.on('connection', (socket) => {
         const amount = Math.max(0, Math.floor(effect.amount || 0))
         const healed = applyHeal(actorNext, amount)
         Object.assign(actorNext, healed.player)
+
+        // Ally heal — if the skill defines allyHeal and there's a living teammate, heal them too
+        let allyHealedAmount = 0
+        let allyPlayerIndex = null
+        const allyHealAmt = Math.max(0, Math.floor(effect.allyHeal || 0))
+        if (allyHealAmt > 0) {
+          const myTeam = actorNext.team
+          const lowestAlly = nextMatch.players
+            .filter(p => p.playerIndex !== playerIndex && p.team === myTeam && (p.hp || 0) > 0)
+            .sort((a, b) => (a.hp || 0) - (b.hp || 0))[0]
+          if (lowestAlly) {
+            const allyInMatch = getPlayerByIndex(nextMatch, lowestAlly.playerIndex)
+            const allyHealed = applyHeal(allyInMatch, allyHealAmt)
+            Object.assign(allyInMatch, allyHealed.player)
+            allyHealedAmount = allyHealed.healed
+            allyPlayerIndex = lowestAlly.playerIndex
+          }
+        }
+
         log.push({
           kind: 'skill',
           actorPlayerIndex: playerIndex,
@@ -1449,6 +1469,7 @@ io.on('connection', (socket) => {
           slot: index + 1,
           name: skill.name,
           healed: healed.healed,
+          ...(allyHealedAmount > 0 ? { allyHealed: allyHealedAmount, allyPlayerIndex } : {}),
         })
       } else if (effectKind === 'damage_reduction') {
         const reduction = Math.max(0, Math.min(0.9, Number(effect.reduction || 0)))

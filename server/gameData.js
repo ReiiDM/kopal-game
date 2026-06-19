@@ -49,7 +49,7 @@ export const HEROES = {
         cooldown: 2,
         effect: {
           kind: 'shield',
-          shield: 26,
+          shield: 18,
           turns: 2,
           target: 'self',
           notes: 'Defense skill; does not deal damage.',
@@ -115,14 +115,15 @@ export const HEROES = {
       },
       {
         name: 'Self Love Muna',
-        description: 'Heal big HP.',
+        description: 'Heal self (24 HP). In 2v2, also heals the lowest-HP ally for 10.',
         type: 'defense',
         cooldown: 3,
         effect: {
           kind: 'heal',
           amount: 24,
+          allyHeal: 10,
           target: 'self',
-          notes: 'Defense/sustain; does not deal damage.',
+          notes: 'Heals self 24 HP. In 2v2, also heals lowest-HP teammate for 10.',
         },
       },
       {
@@ -184,15 +185,15 @@ export const HEROES = {
       },
       {
         name: 'Gulat Ka No?',
-        description: 'Medium damage + enemy cooldown +2.',
+        description: 'Medium damage + enemy cooldown +1.',
         type: 'utility',
         cooldown: 2,
         effect: {
           kind: 'damage_and_cooldown_increase',
           damage: 20,
-          increaseEnemyCooldownBy: 2,
+          increaseEnemyCooldownBy: 1,
           target: 'enemy',
-          notes: 'Adds +2 to all enemy cooldown counters.',
+          notes: 'Adds +1 to all enemy cooldown counters.',
         },
       },
       {
@@ -339,9 +340,9 @@ export const HEROES = {
         effect: {
           kind: 'damage_with_recoil',
           damage: 42,
-          recoilSelf: 18,
+          recoilSelf: 12,
           target: 'enemy',
-          notes: 'Highest base skill damage — but takes heavy recoil. Very risky pre-Turn 8.',
+          notes: 'Highest base skill damage — but takes recoil. Reduced from 18 to 12.',
         },
       },
       {
@@ -349,16 +350,16 @@ export const HEROES = {
         description: 'Nag-gym na si Chano. Heal + attack boost + stun chance + armor — lahat. God mode.',
         type: 'ultimate',
         cooldown: 6,
-        minTurn: 12,
+        minTurn: 8,
         effect: {
           kind: 'gym_mode',
-          healPct: 0.5,
-          attackUpPct: 0.5,
+          healPct: 0.3,
+          attackUpPct: 0.35,
           stunChancePct: 0.25,
           armorPct: 0.25,
           turns: 3,
           target: 'self',
-          notes: 'Cannot be used before Turn 12. Heals 50% max HP, +50% atk, +25% stun on hit, +25% damage reduction for 3 turns.',
+          notes: 'Cannot be used before Turn 8. Heals 30% max HP, +35% atk, +25% stun on hit, +25% damage reduction for 3 turns.',
         },
       },
     ],
@@ -445,12 +446,13 @@ export const GLOBAL_ITEMS = [
   {
     id: 'chismis_notebook',
     name: 'Chismis Notebook',
-    description: 'Increase debuff & DOT effects.',
+    description: 'Attack-down debuffs last 1 extra turn.',
     effect: {
       kind: 'debuff_boost',
-      debuffMultiplier: 1.25,
+      debuffMultiplier: 1.0,
+      extraDebuffTurns: 1,
       mode: 'passive',
-      notes: 'Your debuffs and DOTs are 25% stronger (e.g., attack down, damage over time).',
+      notes: 'Your attack-down debuffs last 1 extra turn.',
     },
   },
   {

@@ -97,8 +97,7 @@ function App() {
         `Stun on hit: ${Math.round((effect.stunChancePct ?? 0) * 100)}% chance (${effect.turns ?? 1} turn/s)`,
         `Armor: +${Math.round((effect.armorPct ?? 0) * 100)}% damage reduction (${effect.turns ?? 1} turn/s)`,
       ]
-    }
-    if (kind === 'damage_and_random') {
+    }    if (kind === 'damage_and_random') {
       const table = Array.isArray(effect.table) ? effect.table : []
       const rows = table.map((t) => {
         if (t.kind === 'stun') return `Random: Stun (${t.turns ?? 1} turn/s)`
@@ -125,7 +124,7 @@ function App() {
     if (kind === 'speed_up') return [`Turn start: reduce 1 random cooldown by ${effect.reduceRandomCooldownBy ?? 1}`]
     if (kind === 'flat_damage_reduction') return [`-${effect.reduceBy ?? 0} damage taken (flat)`]
     if (kind === 'stun_chance_on_damage') return [`On hit: ${formatPct(effect.chance ?? 0)} to stun (${effect.stunTurns ?? 1} turn/s)`]
-    if (kind === 'debuff_boost') return [`Debuffs and DOTs are ${formatPct((effect.debuffMultiplier ?? 1) - 1)} stronger`]
+    if (kind === 'debuff_boost') return [`Attack-down debuffs last ${effect.extraDebuffTurns ?? 1} extra turn(s)`]
     if (kind === 'random_buff_each_turn') return ['Turn start: random small buff']
     if (kind === 'ultimate_damage_boost') return [`Ultimates deal +${formatPct(effect.bonusDamagePct ?? 0)} damage`]
     return [`Kind: ${kind}`]
@@ -768,6 +767,7 @@ function App() {
       if (entry.dealt) parts.push(`dealing ${entry.dealt} damage`)
       if (entry.healedSelf) parts.push(`and healed ${entry.healedSelf}`)
       if (entry.healed) parts.push(`and healed ${entry.healed}`)
+      if (entry.allyHealed) parts.push(`and healed ally for ${entry.allyHealed}`)
       if (entry.gainedShield) parts.push(`and gained ${entry.gainedShield} shield`)
       if (entry.recoilSelf) parts.push(`and took ${entry.recoilSelf} recoil`)
       if (entry.crit) parts.push('(CRIT)')
