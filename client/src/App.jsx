@@ -1961,7 +1961,7 @@ function App() {
 
         {page === 'battle' ? (
           <>
-            <section className={`battle-section flex-1 overflow-hidden md:overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/40 p-2 sm:p-4 md:p-6 pb-24 md:pb-6 mt-1 md:mt-4 transition-all duration-300 ${isShaking ? 'animate-shake' : ''}`}>
+            <section className={`battle-section flex-1 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/40 p-2 sm:p-4 md:p-6 pb-24 md:pb-6 mt-1 md:mt-4 transition-all duration-300 ${isShaking ? 'animate-shake' : ''}`}>
               <div className="grid gap-2 md:gap-6">
                 <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-2 sm:p-4">
                   <div className="flex flex-wrap items-center justify-between gap-1 sm:gap-3">
@@ -2007,11 +2007,12 @@ function App() {
                         className="relative"
                         style={{ aspectRatio: '3/4' }}
                       >
-                        {/* Battle Speech Bubble */}
+                        {/* Battle Speech Bubble — rendered inside card so it is never clipped */}
                         {activeTaunts[p.socketId] && (
-                          <div className="absolute -top-14 left-1/2 transform -translate-x-1/2 z-30 animate-bounce bg-white text-slate-950 px-2 py-1.5 rounded-xl text-[10px] font-black shadow-2xl border-2 border-slate-950 max-w-[160px] w-max text-center break-words leading-tight">
-                            {activeTaunts[p.socketId].text}
-                            <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-white" />
+                          <div className="absolute top-1 left-0 right-0 flex justify-center z-40 pointer-events-none">
+                            <div className="animate-bounce bg-white text-slate-950 px-2 py-1.5 rounded-xl text-[10px] font-black shadow-2xl border-2 border-slate-950 max-w-[90%] text-center break-words leading-tight">
+                              {activeTaunts[p.socketId].text}
+                            </div>
                           </div>
                         )}
 
