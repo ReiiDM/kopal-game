@@ -1318,12 +1318,14 @@ function App() {
   }
 
   return (
-    <div className="min-h-full bg-slate-950 text-slate-100">
-      <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center px-6 py-12">
-        <header className="mb-10">
-          <div className="flex items-center justify-between gap-4">
-            <h1 className="text-3xl font-semibold tracking-tight">Kopal Battlefield</h1>
-            <div className="text-sm flex items-center gap-3 flex-wrap">
+    <div className={`bg-slate-950 text-slate-100 ${page === 'battle' ? 'h-[100dvh] overflow-hidden flex flex-col' : 'min-h-full'}`}>
+      <div className={`mx-auto flex max-w-3xl flex-col px-4 sm:px-6 ${
+        page === 'battle' ? 'h-full overflow-hidden' : 'min-h-full justify-center py-12'
+      }`}>
+        <header className={page === 'battle' ? 'mb-2 py-2 border-b border-slate-800/60' : 'mb-10'}>
+          <div className="flex items-center justify-between gap-2">
+            <h1 className={page === 'battle' ? 'text-lg font-semibold tracking-tight truncate' : 'text-3xl font-semibold tracking-tight'}>Kopal Battlefield</h1>
+            <div className="text-sm flex items-center gap-2 flex-shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -1337,29 +1339,31 @@ function App() {
                     : 'bg-slate-800/40 text-slate-400 border-slate-700/40 hover:bg-slate-800'
                 }`}
               >
-                {musicEnabled ? '🎵 Music: On' : '🔇 Music: Off'}
+                {musicEnabled ? '🎵' : '🔇'}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  resumeAudio()
-                  playSound('skill')
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-slate-800/40 text-slate-300 border-slate-700/40 hover:bg-slate-800 transition-all active:scale-95 duration-100"
-              >
-                🔊 Test Sound
-              </button>
-              <span className="text-emerald-400 font-bold">🏆 {wins} Wins</span>
-              <span className="text-slate-400 font-bold">💀 {losses} Losses</span>
+              {page !== 'battle' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    resumeAudio()
+                    playSound('skill')
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-slate-800/40 text-slate-300 border-slate-700/40 hover:bg-slate-800 transition-all active:scale-95 duration-100"
+                >
+                  🔊 Test Sound
+                </button>
+              )}
+              <span className="text-emerald-400 font-bold text-xs">🏆 {wins}</span>
+              <span className="text-slate-400 font-bold text-xs">💀 {losses}</span>
             </div>
           </div>
-          <p className="mt-2 text-sm text-slate-300">
-            {page === 'battle'
-              ? 'Battle'
-              : page === 'setup'
+          {page !== 'battle' && (
+            <p className="mt-2 text-sm text-slate-300">
+              {page === 'setup'
                 ? 'Setup your hero and items.'
                 : 'Create a room or join an existing one.'}
-          </p>
+            </p>
+          )}
         </header>
 
         {page !== 'battle' && (
@@ -1779,7 +1783,7 @@ function App() {
 
         {page === 'battle' ? (
           <>
-            <section className={`mt-6 rounded-xl border border-slate-800 bg-slate-900/40 p-6 pb-32 md:pb-6 transition-all duration-300 ${isShaking ? 'animate-shake' : ''}`}>
+            <section className={`flex-1 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/40 p-3 sm:p-6 pb-28 md:pb-6 mt-2 sm:mt-4 transition-all duration-300 ${isShaking ? 'animate-shake' : ''}`}>
               <div className="grid gap-6">
                 <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2248,7 +2252,7 @@ function App() {
               </div>
             </div>
 
-            {/* Floating Arrow & Quick Chat Drawer */}
+            {/* Floating Trashtalk Arrow Drawer — visible on ALL screen sizes on battle page */}
             <div className={`fixed right-0 top-1/2 -translate-y-1/2 z-50 flex items-center transition-transform duration-300 ${
               isMobileTauntOpen ? 'translate-x-0' : 'translate-x-[240px]'
             }`}>
@@ -2272,17 +2276,11 @@ function App() {
               </button>
 
               {/* Quick Chat Menu Panel */}
-              <div className="bg-slate-900/95 backdrop-blur-md border-y border-l border-slate-700/60 rounded-l-2xl p-4 shadow-2xl flex flex-col gap-2.5 w-[240px] border-indigo-500/10">
+              <div className="bg-slate-900/95 backdrop-blur-md border-y border-l border-slate-700/60 rounded-l-2xl p-3 shadow-2xl flex flex-col gap-2 w-[220px]">
                 <div className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-1 pb-1.5 border-b border-slate-800 flex items-center gap-1.5">
-                  <span className="animate-bounce">💬</span> Quick Chat
+                  <span className="animate-bounce">💬</span> Trash Talk
                 </div>
-                {[
-                  'Galaw-galaw baka pumanaw',
-                  'Tsamba lang yan lods',
-                  'Parang kulang sa gym',
-                  'Iyak nalang',
-                  'Talo ka na naman boy'
-                ].map((taunt) => (
+                {QUICK_TAUNTS.map((taunt) => (
                   <button
                     key={taunt}
                     type="button"
@@ -2292,7 +2290,7 @@ function App() {
                       }
                       setIsMobileTauntOpen(false)
                     }}
-                    className="w-full text-left px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-semibold rounded-xl border border-slate-700/50 hover:border-indigo-500/45 transition-all active:scale-98 duration-100 truncate shadow-sm hover:shadow-indigo-500/10"
+                    className="w-full text-left px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-semibold rounded-xl border border-slate-700/50 hover:border-indigo-500/45 transition-all active:scale-95 duration-100 shadow-sm"
                   >
                     {taunt}
                   </button>
