@@ -1512,13 +1512,13 @@ function App() {
                 <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
                   <div className="text-sm font-semibold flex items-center gap-2 mb-3">
                     <span className="w-6 h-6 rounded-full bg-indigo-500 text-white flex items-center justify-center text-xs">1</span>
-                    Select Fighter
-                    <span className="ml-auto text-xs text-slate-500 font-normal">Only Fighters shown</span>
+                    Select Your Hero
+                    <span className="ml-auto text-xs text-slate-500 font-normal">{Object.values(heroes).length} heroes</span>
                   </div>
 
-                  {/* 3-column Fighter profile grid */}
-                  <div className="grid grid-cols-3 gap-3">
-                    {Object.values(heroes).filter(h => h.role === 'Fighter').map((h) => (
+                  {/* Responsive profile card grid: 2 cols on mobile, 3 on sm+ */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {Object.values(heroes).map((h) => (
                       <button
                         key={h.id}
                         type="button"
@@ -1531,7 +1531,7 @@ function App() {
                         } ${hasSentReady ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer'}`}
                       >
                         {/* Profile Image */}
-                        <div className={`w-16 h-16 rounded-full border-2 overflow-hidden bg-slate-800 flex items-center justify-center flex-shrink-0 ${
+                        <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full border-2 overflow-hidden bg-slate-800 flex items-center justify-center flex-shrink-0 ${
                           selectedHeroId === h.id ? 'border-indigo-400 shadow-[0_0_8px_rgba(99,102,241,0.5)]' : 'border-slate-600'
                         }`}>
                           <img
@@ -1549,11 +1549,18 @@ function App() {
                               }
                             }}
                           />
-                          <div className="w-full h-full flex items-center justify-center text-2xl text-slate-400" style={{ display: 'none' }}>
+                          <div className="w-full h-full flex items-center justify-center text-xl text-slate-400" style={{ display: 'none' }}>
                             {h.name.charAt(0)}
                           </div>
                         </div>
                         <div className="text-xs font-semibold text-slate-200 leading-tight">{h.name}</div>
+                        <div className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                          h.role === 'Fighter' ? 'bg-orange-500/20 text-orange-300' :
+                          h.role === 'Tank' ? 'bg-blue-500/20 text-blue-300' :
+                          h.role === 'Assassin' ? 'bg-red-500/20 text-red-300' :
+                          h.role === 'Burst' ? 'bg-yellow-500/20 text-yellow-300' :
+                          'bg-purple-500/20 text-purple-300'
+                        }`}>{h.role}</div>
                         {selectedHeroId === h.id && (
                           <div className="text-emerald-400 text-base leading-none">✓</div>
                         )}
@@ -1563,10 +1570,10 @@ function App() {
 
                   {/* Fighter detail panel — shown when a fighter is selected */}
                   {selectedHero && (
-                    <div className="mt-4 rounded-lg border border-indigo-800/60 bg-indigo-950/20 p-4 animate-fadeIn">
-                      {/* Fighter header */}
+                    <div className="mt-4 rounded-lg border border-indigo-800/60 bg-indigo-950/20 p-3 sm:p-4">
+                      {/* Hero detail header */}
                       <div className="flex items-center gap-3 mb-4">
-                        <div className="w-14 h-14 rounded-full border-2 border-indigo-400 overflow-hidden bg-slate-800 flex-shrink-0">
+                        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full border-2 border-indigo-400 overflow-hidden bg-slate-800 flex-shrink-0">
                           <img
                             src={`/images/${selectedHero.id}.jpg`}
                             alt={selectedHero.name}
@@ -1577,7 +1584,13 @@ function App() {
                         <div>
                           <div className="text-base font-bold text-slate-100">{selectedHero.name}</div>
                           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 font-semibold">⚔️ {selectedHero.role}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                              selectedHero.role === 'Fighter' ? 'bg-orange-500/20 text-orange-300' :
+                              selectedHero.role === 'Tank' ? 'bg-blue-500/20 text-blue-300' :
+                              selectedHero.role === 'Assassin' ? 'bg-red-500/20 text-red-300' :
+                              selectedHero.role === 'Burst' ? 'bg-yellow-500/20 text-yellow-300' :
+                              'bg-purple-500/20 text-purple-300'
+                            }`}>⚔️ {selectedHero.role}</span>
                             <span className="text-xs text-slate-400">❤️ {selectedHero.baseHP} HP</span>
                           </div>
                         </div>
@@ -1597,7 +1610,7 @@ function App() {
                       </div>
 
                       {/* Skills */}
-                      <div className="grid gap-2">
+                      <div className="grid gap-2 sm:grid-cols-2">
                         {(selectedHero.skills || []).map((s) => (
                           <div key={s.name} className="rounded-lg border border-slate-700 bg-slate-950/50 p-3">
                             <div className="flex items-center justify-between gap-2 mb-1">
