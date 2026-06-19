@@ -128,7 +128,9 @@ function getPlayerIndexFromMatch(match, socketId) {
 }
 
 function applyHeal(player, amount) {
-  const heal = Math.max(0, Math.floor(amount || 0))
+  const healBoostPct = Math.max(0, Math.min(2, Number(player?.effects?.opMode?.healBoostPct || 0)))
+  const boostedAmount = Math.max(0, Math.floor((amount || 0) * (1 + healBoostPct)))
+  const heal = Math.max(0, boostedAmount)
   if (!heal) return { player, healed: 0 }
   const next = { ...player }
   const maxHp = Math.max(1, next.baseHP || 1)
@@ -174,6 +176,7 @@ function getItemMods(player) {
     debuffMultiplier: 1, // chismis_notebook now extends turns instead of boosting pct
     extraDebuffTurns: ids.has('chismis_notebook') ? 1 : 0,
     randomBuffEachTurn: ids.has('pamahiin_charm'),
+    lifestealPct: (player?.effects?.opMode?.turns || 0) > 0 ? 0.05 : 0,
     ultimateDamageBonusPct: ids.has('final_blessing') ? 0.15 : 0,
   }
 }
@@ -199,23 +202,39 @@ function applyTurnStartItems(player, events) {
   }
 
   if (mods.randomBuffEachTurn) {
-    const roll = Math.floor(Math.random() * 4)
-    if (roll === 0) {
-      const healed = applyHeal(player, 6)
-      Object.assign(player, healed.player)
-      events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'heal', amount: healed.healed, playerIndex: player.playerIndex })
-    } else if (roll === 1) {
-      player.effects = player.effects && typeof player.effects === 'object' ? player.effects : {}
-      player.effects.attack = { pct: 0.1, turns: 1 }
-      events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'attack', pct: 0.1, turns: 1, playerIndex: player.playerIndex })
-    } else if (roll === 2) {
-      player.effects = player.effects && typeof player.effects === 'object' ? player.effects : {}
-      player.effects.damageReduction = { pct: 0.1, turns: 1 }
-      events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'defense', pct: 0.1, turns: 1, playerIndex: player.playerIndex })
+    player.effects = player.effects && typeof player.effects === 'object' ? player.effects : {}
+
+    // Tick down existing OP Mode FIRST (before potentially granting a new one)
+    if ((player.effects.opMode?.turns || 0) > 0) {
+      const remaining = player.effects.opMode.turns - 1
+      if (remaining <= 0) {
+        delete player.effects.opMode
+      } else {
+        player.effects.opMode = { ...player.effects.opMode, turns: remaining }
+      }
+    }
+
+    // 8% chance: OP Mode — +25 flat defense, +25 flat attack bonus, +30% heal boost, 5% lifesteal for 3 turns
+    if (Math.random() < 0.08) {
+      player.effects.opMode = { turns: 3, flatAttackBonus: 25, flatDefenseBonus: 25, healBoostPct: 0.3, lifestealPct: 0.05 }
+      events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'op_mode', turns: 3, playerIndex: player.playerIndex })
     } else {
-      player.effects = player.effects && typeof player.effects === 'object' ? player.effects : {}
-      player.effects.evasion = { pct: 0.25, turns: 1 }
-      events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'evasion', pct: 0.25, turns: 1, playerIndex: player.playerIndex })
+      // Normal small random buff (4 outcomes)
+      const roll = Math.floor(Math.random() * 4)
+      if (roll === 0) {
+        const healed = applyHeal(player, 6)
+        Object.assign(player, healed.player)
+        events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'heal', amount: healed.healed, playerIndex: player.playerIndex })
+      } else if (roll === 1) {
+        player.effects.attack = { pct: 0.1, turns: 1 }
+        events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'attack', pct: 0.1, turns: 1, playerIndex: player.playerIndex })
+      } else if (roll === 2) {
+        player.effects.damageReduction = { pct: 0.1, turns: 1 }
+        events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'defense', pct: 0.1, turns: 1, playerIndex: player.playerIndex })
+      } else {
+        player.effects.evasion = { pct: 0.25, turns: 1 }
+        events.push({ kind: 'item-random', itemId: 'pamahiin_charm', rolled: 'evasion', pct: 0.25, turns: 1, playerIndex: player.playerIndex })
+      }
     }
   }
 }
@@ -237,9 +256,12 @@ function applyDamage(match, attackerIndex, targetIndex, rawAmount, context = {})
   const critRoll = attackerItemMods.critChance > 0 && Math.random() < attackerItemMods.critChance
   const critMultiplier = critRoll ? 1 + attackerItemMods.critDamagePct : 1
 
+  // OP Mode: flat attack bonus added after all multipliers
+  const opModeAttackBonus = Math.max(0, Math.floor(attacker?.effects?.opMode?.flatAttackBonus || 0))
+
   const modifiedAmount = Math.max(
     0,
-    Math.floor((rawAmount || 0) * attackMultiplier * itemAttackMultiplier * ultimateMultiplier * critMultiplier * turnDamageMultiplier)
+    Math.floor((rawAmount || 0) * attackMultiplier * itemAttackMultiplier * ultimateMultiplier * critMultiplier * turnDamageMultiplier) + opModeAttackBonus
   )
   const amount = Math.max(0, Math.floor(modifiedAmount || 0))
   if (!amount) return { match, dealt: 0, evaded: false, reflected: 0, countered: 0, itemStunApplied: false, crit: critRoll }
@@ -269,7 +291,8 @@ function applyDamage(match, attackerIndex, targetIndex, rawAmount, context = {})
   const increased = vulnerability ? amount * (1 + vulnerability.pct) : amount
   const reducedA = damageReduction ? increased * (1 - damageReduction.pct) : increased
   const reducedB = targetItemMods.defenseUpPct ? reducedA * (1 - targetItemMods.defenseUpPct) : reducedA
-  const reducedC = Math.max(0, Math.floor(reducedB) - Math.max(0, Math.floor(targetItemMods.flatDamageReduction || 0)))
+  const opModeFlatDefense = Math.max(0, Math.floor(target?.effects?.opMode?.flatDefenseBonus || 0))
+  const reducedC = Math.max(0, Math.floor(reducedB) - Math.max(0, Math.floor(targetItemMods.flatDamageReduction || 0)) - opModeFlatDefense)
   const finalDamage = Math.max(0, Math.floor(reducedC))
 
   const nextMatch = { ...match, players: match.players.map((p) => ({ ...p })) }
@@ -317,7 +340,17 @@ function applyDamage(match, attackerIndex, targetIndex, rawAmount, context = {})
     }
   }
 
-  return { match: nextMatch, dealt: finalDamage, evaded: false, reflected, countered, itemStunApplied, crit: critRoll }
+  // OP Mode lifesteal: heal attacker for 5% of damage dealt
+  let lifestealHealed = 0
+  const lifestealPct = Math.max(0, Math.min(1, Number(nextAttacker?.effects?.opMode?.lifestealPct || 0)))
+  if (finalDamage > 0 && lifestealPct > 0) {
+    const lifestealAmt = Math.max(1, Math.floor(finalDamage * lifestealPct))
+    const ls = applyHeal(nextAttacker, lifestealAmt)
+    Object.assign(nextAttacker, ls.player)
+    lifestealHealed = ls.healed
+  }
+
+  return { match: nextMatch, dealt: finalDamage, evaded: false, reflected, countered, itemStunApplied, crit: critRoll, lifestealHealed }
 }
 
 function startTurnTick(match, currentPlayerIndex) {
@@ -600,7 +633,7 @@ function createMatchFromPlayerDescriptors(roomCode, descriptors) {
         itemIds: Array.isArray(d.itemIds) ? d.itemIds : [],
         shield: 0,
         cooldowns: [0, 0, 0, 0],
-        effects: { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0, immunityTurns: 0, extraTurnsRemaining: 0, extraTurnChanceTurns: 0, extraTurnChancePct: 0 },
+        effects: { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0, immunityTurns: 0, extraTurnsRemaining: 0, extraTurnChanceTurns: 0, extraTurnChancePct: 0, opMode: null },
       }
     })
     .filter(Boolean)
@@ -1069,6 +1102,7 @@ io.on('connection', (socket) => {
         let totalDealt = 0
         let totalReflected = 0
         let totalCountered = 0
+        let totalLifesteal = 0
         let evaded = false
         let itemStunApplied = false
         for (let i = 0; i < hits; i += 1) {
@@ -1077,6 +1111,7 @@ io.on('connection', (socket) => {
           totalDealt += result.dealt
           totalReflected += result.reflected
           totalCountered += result.countered
+          totalLifesteal += result.lifestealHealed || 0
           evaded = evaded || result.evaded
           itemStunApplied = itemStunApplied || result.itemStunApplied
         }
@@ -1090,6 +1125,7 @@ io.on('connection', (socket) => {
           reflected: totalReflected,
           countered: totalCountered,
           itemStunApplied,
+          ...(totalLifesteal > 0 ? { lifestealHealed: totalLifesteal } : {}),
         })
       }
     } else if (kind === 'skill') {
@@ -1130,7 +1166,7 @@ io.on('connection', (socket) => {
       }
 
       const ensureEffects = (p) => {
-        p.effects = p.effects && typeof p.effects === 'object' ? p.effects : { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0, extraTurnsRemaining: 0, extraTurnChanceTurns: 0, extraTurnChancePct: 0 }
+        p.effects = p.effects && typeof p.effects === 'object' ? p.effects : { dot: [], hot: [], dodgeAllTurns: 0, stunTurns: 0, extraTurnsRemaining: 0, extraTurnChanceTurns: 0, extraTurnChancePct: 0, opMode: null }
         p.effects.dot = Array.isArray(p.effects.dot) ? p.effects.dot : []
         p.effects.hot = Array.isArray(p.effects.hot) ? p.effects.hot : []
         p.effects.dodgeAllTurns = Math.max(0, Math.floor(p.effects.dodgeAllTurns || 0))
@@ -1160,6 +1196,7 @@ io.on('connection', (socket) => {
           countered: result.countered,
           crit: result.crit,
           itemStunApplied: result.itemStunApplied,
+          ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
         })
       } else if (effectKind === 'shield') {
         const shield = Math.max(0, Math.floor(effect.shield || 0))
@@ -1205,6 +1242,7 @@ io.on('connection', (socket) => {
           crit: result.crit,
           itemStunApplied: result.itemStunApplied,
           healedSelf: healed.healed,
+          ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
         })
       } else if (effectKind === 'damage_and_stun') {
         const dmg = Math.max(0, Math.floor(effect.damage || 0))
@@ -1227,6 +1265,7 @@ io.on('connection', (socket) => {
           crit: result.crit,
           itemStunApplied: result.itemStunApplied,
           applied: { kind: 'stun', turns: stunTurns },
+          ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
         })
       } else if (effectKind === 'damage_with_miss') {
         const dmg = Math.max(0, Math.floor(effect.damage || 0))
@@ -1259,6 +1298,7 @@ io.on('connection', (socket) => {
             missed: false,
             crit: result.crit,
             itemStunApplied: result.itemStunApplied,
+            ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
           })
         }
       } else if (effectKind === 'damage_and_attack_down') {
@@ -1284,6 +1324,7 @@ io.on('connection', (socket) => {
           crit: result.crit,
           itemStunApplied: result.itemStunApplied,
           applied: { kind: 'attack', pct: -pct, turns },
+          ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
         })
       } else if (effectKind === 'attack_down_and_heal') {
         const extraTurns = getItemMods(actorNext).extraDebuffTurns
@@ -1340,6 +1381,7 @@ io.on('connection', (socket) => {
           crit: result.crit,
           itemStunApplied: result.itemStunApplied,
           applied: { kind: 'cooldown_increase', amount: inc },
+          ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
         })
       } else if (effectKind === 'dodge_all_and_counter') {
         const dodgeAllTurns = Math.max(1, Math.floor(effect.dodgeAllTurns || 1))
@@ -1404,6 +1446,7 @@ io.on('connection', (socket) => {
           crit: result.crit,
           itemStunApplied: result.itemStunApplied,
           rolled,
+          ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
         })
       } else if (effectKind === 'reflect') {
         const reflectPct = Math.max(0, Math.min(1, Number(effect.reflectPct || 0)))
@@ -1438,6 +1481,7 @@ io.on('connection', (socket) => {
           crit: result.crit,
           itemStunApplied: result.itemStunApplied,
           recoilSelf,
+          ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
         })
       } else if (effectKind === 'heal') {
         const amount = Math.max(0, Math.floor(effect.amount || 0))
@@ -1554,6 +1598,7 @@ io.on('connection', (socket) => {
           itemStunApplied: result.itemStunApplied,
           crit: result.crit,
           applied: dotDamage > 0 ? { kind: 'dot', damage: dotDamage, turns } : undefined,
+          ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
         })
       } else if (effectKind === 'damage_and_shield') {
         const dmg = Math.max(0, Math.floor(effect.damage || 0))
@@ -1575,6 +1620,7 @@ io.on('connection', (socket) => {
           itemStunApplied: result.itemStunApplied,
           crit: result.crit,
           gainedShield: shield,
+          ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
         })
       } else if (effectKind === 'fortify') {
         const shield = Math.max(0, Math.floor(effect.shield || 0))
@@ -1607,6 +1653,7 @@ io.on('connection', (socket) => {
           countered: result.countered,
           itemStunApplied: result.itemStunApplied,
           crit: result.crit,
+          ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
         })
       } else if (effectKind === 'execute') {
         const base = Math.max(0, Math.floor(effect.damage || 0))
@@ -1629,6 +1676,7 @@ io.on('connection', (socket) => {
           countered: result.countered,
           itemStunApplied: result.itemStunApplied,
           crit: result.crit,
+          ...(result.lifestealHealed ? { lifestealHealed: result.lifestealHealed } : {}),
         })
       } else if (effectKind === 'gym_mode') {
         // Tara GYM! — Chano's ultimate

@@ -125,7 +125,7 @@ function App() {
     if (kind === 'flat_damage_reduction') return [`-${effect.reduceBy ?? 0} damage taken (flat)`]
     if (kind === 'stun_chance_on_damage') return [`On hit: ${formatPct(effect.chance ?? 0)} to stun (${effect.stunTurns ?? 1} turn/s)`]
     if (kind === 'debuff_boost') return [`Attack-down debuffs last ${effect.extraDebuffTurns ?? 1} extra turn(s)`]
-    if (kind === 'random_buff_each_turn') return ['Turn start: random small buff']
+    if (kind === 'random_buff_each_turn') return ['8% chance: OP Mode (3 turns) — +25 def, +25 atk, +30% heal, 5% lifesteal', 'Otherwise: random small buff each turn (heal/attack/defense/evasion)']
     if (kind === 'ultimate_damage_boost') return [`Ultimates deal +${formatPct(effect.bonusDamagePct ?? 0)} damage`]
     return [`Kind: ${kind}`]
   }
@@ -749,6 +749,7 @@ function App() {
       if (ev.kind === 'hot') return `${name} healed ${ev.amount}`
       if (ev.kind === 'item-heal') return `${name} healed ${ev.amount} (Fishball Power)`
       if (ev.kind === 'item-cooldown-reduce') return `${name}'s cooldown reduced (Energy Drink)`
+      if (ev.kind === 'item-random' && ev.rolled === 'op_mode') return `🌟 ${name} triggered OP MODE! +25 def, +25 atk, +30% heal, 5% lifesteal (3 turns)`
       if (ev.kind === 'item-random') return `${name} got a random buff (Pamahiin Charm)`
       if (ev.kind === 'stun-skip') return `${name} is stunned and skips the turn`
       if (ev.kind === 'extra-turn') return `${name} gets an EXTRA TURN!`
@@ -766,6 +767,7 @@ function App() {
       const parts = [`${actor} used ${actionName}`]
       if (entry.dealt) parts.push(`dealing ${entry.dealt} damage`)
       if (entry.healedSelf) parts.push(`and healed ${entry.healedSelf}`)
+      if (entry.lifestealHealed) parts.push(`(lifesteal +${entry.lifestealHealed})`)
       if (entry.healed) parts.push(`and healed ${entry.healed}`)
       if (entry.allyHealed) parts.push(`and healed ally for ${entry.allyHealed}`)
       if (entry.gainedShield) parts.push(`and gained ${entry.gainedShield} shield`)
@@ -905,6 +907,20 @@ function App() {
               setBattleEffects((prev) => prev.filter(e => e.id !== effectId))
             }, 1500)
           }
+
+          // Lifesteal float-up
+          if (entry.lifestealHealed) {
+            const effectId = `${Date.now()}-${Math.random()}`
+            setBattleEffects((prev) => [...prev, {
+              id: effectId,
+              playerIndex: entry.actorPlayerIndex,
+              text: `🩸+${entry.lifestealHealed}`,
+              type: 'heal'
+            }])
+            setTimeout(() => {
+              setBattleEffects((prev) => prev.filter(e => e.id !== effectId))
+            }, 1500)
+          }
           
           // Add effect for healing others
           if (entry.healed) {
@@ -1030,6 +1046,19 @@ function App() {
           setTimeout(() => {
             setBattleEffects((prev) => prev.filter(e => e.id !== effectId))
           }, 1500)
+        }
+
+        // OP Mode proc — big visual moment
+        if (ev.kind === 'item-random' && ev.rolled === 'op_mode' && ev.playerIndex) {
+          playSound('victory')
+          setFlashWhite(true)
+          setTimeout(() => setFlashWhite(false), 400)
+          setUltimateSplash({
+            heroId: match?.players?.find(p => p.playerIndex === ev.playerIndex)?.heroId || '',
+            heroName: match?.players?.find(p => p.playerIndex === ev.playerIndex)?.heroName || 'Hero',
+            skillName: '🌟 PAMAHIIN ACTIVATED!'
+          })
+          setTimeout(() => setUltimateSplash(null), 2200)
         }
       }
 
@@ -2259,6 +2288,11 @@ function App() {
                                 {p.effects.immunityTurns > 0 && <span className="text-[9px] px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-300">🛡️</span>}
                                 {p.effects.damageReduction && <span className="text-[9px] px-1 py-0.5 rounded bg-indigo-500/20 text-indigo-300">🛡+{p.effects.damageReduction.pct * 100}%</span>}
                                 {p.effects.reflect && <span className="text-[9px] px-1 py-0.5 rounded bg-pink-500/20 text-pink-300">🔄</span>}
+                                {(p.effects.opMode?.turns || 0) > 0 && (
+                                  <span className="text-[9px] px-1 py-0.5 rounded font-black animate-pulse" style={{ background: 'rgba(250,204,21,0.25)', color: '#fde047', boxShadow: '0 0 6px rgba(250,204,21,0.6)' }}>
+                                    🌟OP {p.effects.opMode.turns}t
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>

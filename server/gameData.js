@@ -458,12 +458,13 @@ export const GLOBAL_ITEMS = [
   {
     id: 'pamahiin_charm',
     name: 'Pamahiin Charm',
-    description: 'Random small buffs each turn.',
+    description: 'Random small buffs each turn. 8% chance: OP mode for 3 turns.',
     effect: {
       kind: 'random_buff_each_turn',
       when: 'turn_start',
       mode: 'passive',
-      notes: 'Each turn start grants a small random buff (heal/attack/defense/evasion).',
+      opProcChance: 0.08,
+      notes: 'Each turn start: small random buff (heal/attack/defense/evasion). 8% chance to enter OP Mode: +25 flat defense, +25 flat attack damage, +30% heal bonus, 5% lifesteal for 3 turns.',
     },
   },
   {
