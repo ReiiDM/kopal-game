@@ -1847,7 +1847,7 @@ function App() {
                       >
                         {/* Battle Speech Bubble */}
                         {activeTaunts[p.socketId] && (
-                          <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 z-30 animate-bounce bg-white text-slate-950 px-2 py-1 rounded-xl text-[10px] font-black shadow-2xl border-2 border-slate-950 whitespace-nowrap">
+                          <div className="absolute -top-14 left-1/2 transform -translate-x-1/2 z-30 animate-bounce bg-white text-slate-950 px-2 py-1.5 rounded-xl text-[10px] font-black shadow-2xl border-2 border-slate-950 max-w-[160px] w-max text-center break-words leading-tight">
                             {activeTaunts[p.socketId].text}
                             <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-white" />
                           </div>
