@@ -180,6 +180,22 @@ function App() {
 
   const audioCtxRef = useRef(null)
 
+  // Tracks players who have already received the death sound this match
+  const deadPlayersRef = useRef(new Set())
+
+  // Play a pre-recorded voice/sfx file (OGG)
+  const playVoice = (filename, volume = 1.0) => {
+    try {
+      const audio = new Audio(`/${filename}`)
+      audio.volume = volume
+      audio.play().catch(() => {
+        // Autoplay blocked — ignore silently
+      })
+    } catch (e) {
+      // ignore
+    }
+  }
+
   const resumeAudio = () => {
     try {
       // Lazy init/resume SFX context
@@ -602,6 +618,7 @@ function App() {
       setBattleLogs([])
       setShowWinnerModal(false)
       setStatus('Match started.')
+      deadPlayersRef.current = new Set() // reset death tracking for new match
 
       // Trigger stunning battle start overlay
       setShowBattleStartOverlay(true)
@@ -715,6 +732,9 @@ function App() {
           setTimeout(() => {
             setUltimateSplash(null)
           }, 1800)
+
+          // 🔊 SS voice-over
+          playVoice('ss-audio.ogg', 0.9)
         }
       } else {
         const hasCrit = logEntries.some(entry => entry.crit)
@@ -790,6 +810,9 @@ function App() {
               text: `-${entry.dealt}`,
               type: 'damage'
             }])
+
+            // 🔊 Hurt voice-over when ANY hero takes damage
+            playVoice('hurt-audio.ogg', 0.85)
             
             setTimeout(() => {
               setBattleEffects((prev) => prev.filter(e => e.id !== effectId))
@@ -903,6 +926,17 @@ function App() {
           }
         }
       }
+
+      // 🔊 Died voice-over — fire once per player when their HP hits 0
+      if (match?.players) {
+        for (const p of match.players) {
+          if ((p.hp ?? 1) <= 0 && !deadPlayersRef.current.has(p.playerIndex)) {
+            deadPlayersRef.current.add(p.playerIndex)
+            setTimeout(() => playVoice('died-audio.ogg', 1.0), 200)
+          }
+        }
+      }
+
       const tickEvents = Array.isArray(payload?.tickEvents) ? payload.tickEvents : []
       for (const ev of tickEvents) {
         const line = formatTickEvent(match, ev)
