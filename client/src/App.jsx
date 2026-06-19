@@ -328,12 +328,17 @@ function App() {
   const [activeTaunts, setActiveTaunts] = useState({}) // { [socketId]: { text, id } }
 
   const triggerSpeechBubble = (socketId, text) => {
+    console.log('triggerSpeechBubble called for socketId:', socketId, 'text:', text)
     if (!socketId) return
     const id = `${Date.now()}-${Math.random()}`
-    setActiveTaunts((prev) => ({
-      ...prev,
-      [socketId]: { text, id }
-    }))
+    setActiveTaunts((prev) => {
+      const next = {
+        ...prev,
+        [socketId]: { text, id }
+      }
+      console.log('activeTaunts state updated to:', next)
+      return next
+    })
     
     // Clear after 2.5 seconds
     setTimeout(() => {
@@ -968,6 +973,7 @@ function App() {
     }
 
     function onReceiveTaunt(payload) {
+      console.log('onReceiveTaunt client-side payload received:', payload, 'current client socket ID:', socket?.id)
       if (!payload || !payload.socketId) return
       
       // Play a quick test sound
